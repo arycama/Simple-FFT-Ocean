@@ -24,27 +24,15 @@ public class Ocean : MonoBehaviour
     [SerializeField]
     private float gravity = 9.81f;
 
-    [SerializeField]
-    private Material material = null;
-
-    [SerializeField]
-    private int numGridsX = 2;
-
-    [SerializeField]
-    private int numGridsZ = 2;
-
-    private GameObject[] oceanGrid;
-    private Mesh mesh;
     private Vector2[,] heightBuffer;
     private Vector4[,] slopeBuffer, displacementBuffer;
     private Vector2[] spectrum, spectruconj;
-    private Vector3[] position, vertices, normals;
     private float[] dispersionTable;
     private float[] butterflyLookupTable = null;
 
     public Texture2D heightMap, normalMap, displacementMap;
     private Color[] displacementPixels, normalPixels;
-    private Color[] heightPixels;
+    private ushort[] heightPixels;
 
     private void OnEnable()
     {
@@ -71,56 +59,23 @@ public class Ocean : MonoBehaviour
         spectrum = new Vector2[(resolution + 1) * (resolution + 1)];
         spectruconj = new Vector2[(resolution + 1) * (resolution + 1)];
 
-        position = new Vector3[(resolution + 1) * (resolution + 1)];
-        vertices = new Vector3[(resolution + 1) * (resolution + 1)];
-        normals = new Vector3[(resolution + 1) * (resolution + 1)];
-
-        MakeMesh();
-        oceanGrid = new GameObject[numGridsX * numGridsZ];
-
-        for (var x = 0; x < numGridsX; x++)
-        {
-            for (var z = 0; z < numGridsZ; z++)
-            {
-                var idx = x + z * numGridsX;
-
-                oceanGrid[idx] = new GameObject("Ocean grid " + idx.ToString());
-                oceanGrid[idx].AddComponent<MeshFilter>();
-                oceanGrid[idx].AddComponent<MeshRenderer>();
-                oceanGrid[idx].GetComponent<Renderer>().material = material;
-                oceanGrid[idx].GetComponent<MeshFilter>().mesh = mesh;
-                oceanGrid[idx].transform.Translate(new Vector3(x * patchSize - numGridsX * patchSize / 2, 0.0f, z * patchSize - numGridsZ * patchSize / 2));
-                oceanGrid[idx].transform.parent = this.transform;
-            }
-        }
-
         Random.InitState(0);
-        var meshVertices = mesh.vertices;
-
-        for (int y = 0; y < (resolution + 1); y++)
+        for (var y = 0; y < (resolution + 1); y++)
         {
-            for (int x = 0; x < (resolution + 1); x++)
+            for (var x = 0; x < (resolution + 1); x++)
             {
-                int index = y * (resolution + 1) + x;
-
+                var index = y * (resolution + 1) + x;
                 spectrum[index] = GetSpectrum(x, y);
                 spectruconj[index] = GetSpectrum(-x, -y);
                 spectruconj[index].y *= -1.0f;
-
-                position[index].x = meshVertices[index].x = x * patchSize / resolution;
-                position[index].y = meshVertices[index].y = 0.0f;
-                position[index].z = meshVertices[index].z = y * patchSize / resolution;
             }
         }
 
-        mesh.vertices = meshVertices;
-        mesh.RecalculateBounds();
+        heightMap = new Texture2D(resolution, resolution, TextureFormat.RHalf, false) { filterMode = FilterMode.Point };
+        displacementMap = new Texture2D(resolution, resolution, TextureFormat.RGHalf, false) { filterMode = FilterMode.Point };
+        normalMap = new Texture2D(resolution, resolution, TextureFormat.RG16, false) { filterMode = FilterMode.Point };
 
-        heightMap = new Texture2D(resolution, resolution, TextureFormat.RFloat, false) { filterMode = FilterMode.Point };
-        displacementMap = new Texture2D(resolution, resolution, TextureFormat.RGFloat, false) { filterMode = FilterMode.Point };
-        normalMap = new Texture2D(resolution, resolution, TextureFormat.RGBAFloat, false);
-
-        heightPixels = new Color[resolution * resolution];
+        heightPixels = new ushort[resolution * resolution];
         normalPixels = new Color[resolution * resolution];
         displacementPixels = new Color[resolution * resolution];
 
@@ -192,76 +147,20 @@ public class Ocean : MonoBehaviour
         {
             for (var x = 0; x < resolution; x++)
             {
-                var index = y * resolution + x;          // index into buffers
-                var index1 = y * (resolution + 1) + x;    // index into vertices
-
+                var index = y * resolution + x;
                 var sign = ((x + y) & 1) == 0 ? 1 : -1;
-
-                // height
-                vertices[index1].y = heightBuffer[1, index].x * sign;
-
-                // displacement
-                vertices[index1].x = position[index1].x + displacementBuffer[1, index].x * choppyness * sign;
-                vertices[index1].z = position[index1].z + displacementBuffer[1, index].z * choppyness * sign;
-
-                // normal
-                var n = new Vector3(-slopeBuffer[1, index].x * sign, 1.0f, -slopeBuffer[1, index].z * sign);
-                n.Normalize();
-
-                normals[index1].x = n.x;
-                normals[index1].y = n.y;
-                normals[index1].z = n.z;
 
                 // Textures
                 var dispX = displacementBuffer[1, index].x * choppyness * sign;
                 var dispZ =  displacementBuffer[1, index].z * choppyness * sign;
 
-                heightPixels[index] = Color.red * heightBuffer[1, index].x * sign;
+                heightPixels[index] = Mathf.FloatToHalf(heightBuffer[1, index].x * sign);
                 displacementPixels[index] = new Color(dispX, dispZ, 0, 0);
-                normalPixels[index] = new Color(n.x, n.y, n.z);
-
-                // for tiling
-                if (x == 0 && y == 0)
-                {
-                    vertices[index1 + resolution + (resolution + 1) * resolution].y = heightBuffer[1, index].x * sign;
-
-                    vertices[index1 + resolution + (resolution + 1) * resolution].x = position[index1 + resolution + (resolution + 1) * resolution].x + displacementBuffer[1, index].x * choppyness * sign;
-                    vertices[index1 + resolution + (resolution + 1) * resolution].z = position[index1 + resolution + (resolution + 1) * resolution].z + displacementBuffer[1, index].z * choppyness * sign;
-
-                    normals[index1 + resolution + (resolution + 1) * resolution].x = n.x;
-                    normals[index1 + resolution + (resolution + 1) * resolution].y = n.y;
-                    normals[index1 + resolution + (resolution + 1) * resolution].z = n.z;
-                }
-                if (x == 0)
-                {
-                    vertices[index1 + resolution].y = heightBuffer[1, index].x * sign;
-
-                    vertices[index1 + resolution].x = position[index1 + resolution].x + displacementBuffer[1, index].x * choppyness * sign;
-                    vertices[index1 + resolution].z = position[index1 + resolution].z + displacementBuffer[1, index].z * choppyness * sign;
-
-                    normals[index1 + resolution].x = n.x;
-                    normals[index1 + resolution].y = n.y;
-                    normals[index1 + resolution].z = n.z;
-                }
-                if (y == 0)
-                {
-                    vertices[index1 + (resolution + 1) * resolution].y = heightBuffer[1, index].x * sign;
-
-                    vertices[index1 + (resolution + 1) * resolution].x = position[index1 + (resolution + 1) * resolution].x + displacementBuffer[1, index].x * choppyness * sign;
-                    vertices[index1 + (resolution + 1) * resolution].z = position[index1 + (resolution + 1) * resolution].z + displacementBuffer[1, index].z * choppyness * sign;
-
-                    normals[index1 + (resolution + 1) * resolution].x = n.x;
-                    normals[index1 + (resolution + 1) * resolution].y = n.y;
-                    normals[index1 + (resolution + 1) * resolution].z = n.z;
-                }
+                normalPixels[index] = new Color((-slopeBuffer[1, index].x * sign) * 0.5f + 0.5f, (-slopeBuffer[1, index].z * sign) * 0.5f + 0.5f, 0);
             }
         }
 
-        mesh.vertices = vertices;
-        mesh.normals = normals;
-        mesh.RecalculateBounds();
-
-        heightMap.SetPixels(heightPixels, 0);
+        heightMap.SetPixelData(heightPixels, 0);
         displacementMap.SetPixels(displacementPixels, 0);
         normalMap.SetPixels(normalPixels, 0);
 
@@ -309,51 +208,6 @@ public class Ocean : MonoBehaviour
 
         var spectrum = amplitude * Mathf.Exp(-1.0f / (k_length2 * L2)) / k_length4 * k_dot_w2 * Mathf.Exp(-k_length2 * l2);
         return r * Mathf.Sqrt(spectrum / 2.0f);
-    }
-
-    private void MakeMesh()
-    {
-        var size = resolution + 1;
-
-        Vector3[] vertices = new Vector3[size * size];
-        Vector2[] texcoords = new Vector2[size * size];
-        Vector3[] normals = new Vector3[size * size];
-        int[] indices = new int[size * size * 6];
-
-        for (int x = 0; x < size; x++)
-        {
-            for (int y = 0; y < size; y++)
-            {
-                Vector2 uv = new Vector3((float)x / (float)(size - 1), (float)y / (float)(size - 1));
-                Vector3 pos = new Vector3(x, 0.0f, y);
-                Vector3 norm = new Vector3(0.0f, 1.0f, 0.0f);
-
-                texcoords[x + y * size] = uv;
-                vertices[x + y * size] = pos;
-                normals[x + y * size] = norm;
-            }
-        }
-
-        int num = 0;
-        for (int x = 0; x < size - 1; x++)
-        {
-            for (int y = 0; y < size - 1; y++)
-            {
-                indices[num++] = x + y * size;
-                indices[num++] = x + (y + 1) * size;
-                indices[num++] = (x + 1) + y * size;
-
-                indices[num++] = x + (y + 1) * size;
-                indices[num++] = (x + 1) + (y + 1) * size;
-                indices[num++] = (x + 1) + y * size;
-            }
-        }
-
-        mesh = new Mesh();
-        mesh.vertices = vertices;
-        mesh.uv = texcoords;
-        mesh.triangles = indices;
-        mesh.normals = normals;
     }
 
     int BitReverse(int i)
