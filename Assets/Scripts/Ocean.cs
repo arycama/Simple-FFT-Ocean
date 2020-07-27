@@ -40,9 +40,11 @@ public class Ocean : MonoBehaviour
     private Vector2[] spectrum, spectruconj;
     private Vector3[] position, vertices, normals;
     private float[] dispersionTable;
-    private Texture2D fresnelLookUp;
-
     private float[] butterflyLookupTable = null;
+
+    public Texture2D heightMap, normalMap, displacementMap;
+    private Color[] displacementPixels, normalPixels;
+    private Color[] heightPixels;
 
     private void OnEnable()
     {
@@ -113,47 +115,22 @@ public class Ocean : MonoBehaviour
 
         mesh.vertices = meshVertices;
         mesh.RecalculateBounds();
-        CreateFresnelLookUp();
+
+        heightMap = new Texture2D(resolution, resolution, TextureFormat.RFloat, false) { filterMode = FilterMode.Point };
+        displacementMap = new Texture2D(resolution, resolution, TextureFormat.RGFloat, false) { filterMode = FilterMode.Point };
+        normalMap = new Texture2D(resolution, resolution, TextureFormat.RGBAFloat, false);
+
+        heightPixels = new Color[resolution * resolution];
+        normalPixels = new Color[resolution * resolution];
+        displacementPixels = new Color[resolution * resolution];
+
+        Shader.SetGlobalTexture("_OceanHeight", heightMap);
+        Shader.SetGlobalTexture("_OceanNormal", normalMap);
+        Shader.SetGlobalTexture("_OceanDisplacement", displacementMap);
+        Shader.SetGlobalFloat("_OceanScale", patchSize);
     }
 
-    void CreateFresnelLookUp()
-    {
-        float nSnell = 1.34f; //Refractive index of water
-
-        fresnelLookUp = new Texture2D(512, 1, TextureFormat.Alpha8, false);
-        fresnelLookUp.filterMode = FilterMode.Bilinear;
-        fresnelLookUp.wrapMode = TextureWrapMode.Clamp;
-        fresnelLookUp.anisoLevel = 0;
-
-        for (int x = 0; x < 512; x++)
-        {
-            float fresnel = 0.0f;
-            float costhetai = (float)x / 511.0f;
-            float thetai = Mathf.Acos(costhetai);
-            float sinthetat = Mathf.Sin(thetai) / nSnell;
-            float thetat = Mathf.Asin(sinthetat);
-
-            if (thetai == 0.0f)
-            {
-                fresnel = (nSnell - 1.0f) / (nSnell + 1.0f);
-                fresnel = fresnel * fresnel;
-            }
-            else
-            {
-                float fs = Mathf.Sin(thetat - thetai) / Mathf.Sin(thetat + thetai);
-                float ts = Mathf.Tan(thetat - thetai) / Mathf.Tan(thetat + thetai);
-                fresnel = 0.5f * (fs * fs + ts * ts);
-            }
-
-            fresnelLookUp.SetPixel(x, 0, new Color(fresnel, fresnel, fresnel, fresnel));
-        }
-
-        fresnelLookUp.Apply();
-
-        material.SetTexture("_FresnelLookUp", fresnelLookUp);
-    }
-
-    void Update()
+    private void Update()
     {
         var t = Time.timeSinceLevelLoad;
 
@@ -211,7 +188,6 @@ public class Ocean : MonoBehaviour
         PeformFFT(heightBuffer, slopeBuffer, displacementBuffer);
 
         // Apply to mesh (Or textures)
-        var signs = new float[] { 1.0f, -1.0f };
         for (var y = 0; y < resolution; y++)
         {
             for (var x = 0; x < resolution; x++)
@@ -219,7 +195,7 @@ public class Ocean : MonoBehaviour
                 var index = y * resolution + x;          // index into buffers
                 var index1 = y * (resolution + 1) + x;    // index into vertices
 
-                var sign = (int)signs[(x + y) & 1];
+                var sign = ((x + y) & 1) == 0 ? 1 : -1;
 
                 // height
                 vertices[index1].y = heightBuffer[1, index].x * sign;
@@ -235,6 +211,14 @@ public class Ocean : MonoBehaviour
                 normals[index1].x = n.x;
                 normals[index1].y = n.y;
                 normals[index1].z = n.z;
+
+                // Textures
+                var dispX = displacementBuffer[1, index].x * choppyness * sign;
+                var dispZ =  displacementBuffer[1, index].z * choppyness * sign;
+
+                heightPixels[index] = Color.red * heightBuffer[1, index].x * sign;
+                displacementPixels[index] = new Color(dispX, dispZ, 0, 0);
+                normalPixels[index] = new Color(n.x, n.y, n.z);
 
                 // for tiling
                 if (x == 0 && y == 0)
@@ -276,6 +260,14 @@ public class Ocean : MonoBehaviour
         mesh.vertices = vertices;
         mesh.normals = normals;
         mesh.RecalculateBounds();
+
+        heightMap.SetPixels(heightPixels, 0);
+        displacementMap.SetPixels(displacementPixels, 0);
+        normalMap.SetPixels(normalPixels, 0);
+
+        heightMap.Apply(false, false);
+        displacementMap.Apply(false, false);
+        normalMap.Apply(false, false);
     }
 
     Vector2 GetSpectrum(int x, int y)
