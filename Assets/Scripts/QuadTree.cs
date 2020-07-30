@@ -1,36 +1,33 @@
 // Created by Ben Sims 23/07/20
 
-namespace FoxieGames
+public class QuadTree<T>
 {
-    public class QuadTree<T>
+    public QuadTree<T> lowerLeft, lowerRight, upperLeft, upperRight;
+
+    public T Value { get; }
+
+    public QuadTree<T> this[int index]
     {
-        public QuadTree<T> lowerLeft, lowerRight, upperLeft, upperRight;
-
-        public T Value { get; }
-
-        public QuadTree<T> this[int index]
+        get
         {
-            get
+            switch (index)
             {
-                switch (index)
-                {
-                    case 0:
-                        return lowerLeft;
-                    case 1:
-                        return lowerRight;
-                    case 2:
-                        return upperLeft;
-                    case 3:
-                        return upperRight;
-                    default:
-                        throw new System.ArgumentOutOfRangeException();
-                }
+                case 0:
+                    return lowerLeft;
+                case 1:
+                    return lowerRight;
+                case 2:
+                    return upperLeft;
+                case 3:
+                    return upperRight;
+                default:
+                    throw new System.ArgumentOutOfRangeException();
             }
         }
+    }
 
-        public QuadTree(T value)
-        {
-            Value = value;
-        }
+    public QuadTree(T value)
+    {
+        Value = value;
     }
 }
