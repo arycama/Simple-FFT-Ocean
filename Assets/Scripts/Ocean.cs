@@ -1,6 +1,7 @@
 using UnityEngine;
 using Random = UnityEngine.Random;
 using Unity.Mathematics;
+using static Unity.Mathematics.math;
 
 public class Ocean : MonoBehaviour
 {
@@ -40,6 +41,9 @@ public class Ocean : MonoBehaviour
     {
         ComputeButterflyLookupTable();
 
+        Random.InitState(0);
+
+        // Init spectrum and dispersion tables
         for (var y = 0; y < resolution; y++)
         {
             for (var x = 0; x < resolution; x++)
@@ -49,15 +53,7 @@ public class Ocean : MonoBehaviour
                 var kx = Mathf.PI * (2 * x - resolution) / patchSize;
                 var kz = Mathf.PI * (2 * y - resolution) / patchSize;
                 dispersionTable[index] = Mathf.Floor(Mathf.Sqrt(gravity * Mathf.Sqrt(kx * kx + kz * kz)) / w_0) * w_0;
-            }
-        }
 
-        Random.InitState(0);
-        for (var y = 0; y < resolution; y++)
-        {
-            for (var x = 0; x < resolution; x++)
-            {
-                var index = y * resolution + x;
                 var spec = GetSpectrum(x, y);
                 var negSpec = GetSpectrum(-x, -y);
                 spectrum[index] = new Vector4(spec.x, spec.y, negSpec.x, negSpec.y);
@@ -78,7 +74,7 @@ public class Ocean : MonoBehaviour
 
         heightMap = new Texture2D(resolution, resolution, TextureFormat.RHalf, false) { filterMode = FilterMode.Point };
         displacementMap = new Texture2D(resolution, resolution, TextureFormat.RGHalf, false) { filterMode = FilterMode.Point };
-        normalMap = new Texture2D(resolution, resolution, TextureFormat.RG16, true);
+        normalMap = new Texture2D(resolution, resolution, TextureFormat.RGBA32, true);
 
         Shader.SetGlobalTexture("_OceanHeight", heightMap);
         Shader.SetGlobalTexture("_OceanNormal", normalMap);
@@ -95,11 +91,12 @@ public class Ocean : MonoBehaviour
             for (var x = 0; x < resolution; x++)
             {
                 // These could almost be precomputed.. not sure if fetching would take more than computing them again though
-                var kx = Mathf.PI * (2 * x - resolution) / patchSize;
-                var kz = Mathf.PI * (2.0f * y - resolution) / patchSize;
+                // We possibly multiply a bunch of stuff by it anyway.. look into soon
+                var waveVectorX = Mathf.PI * (2 * x - resolution) / patchSize;
+                var waveVectorZ = Mathf.PI * (2.0f * y - resolution) / patchSize;
 
-                var len = Mathf.Sqrt(kx * kx + kz * kz);
-                int index = x + MathUtils.Wrap(y, resolution) * resolution;
+                var waveLength = Mathf.Sqrt(waveVectorX * waveVectorX + waveVectorZ * waveVectorZ);
+                var index = x + y * resolution;
 
                 float omegat = dispersionTable[index] * Time.timeSinceLevelLoad;
 
@@ -116,38 +113,112 @@ public class Ocean : MonoBehaviour
 
                 heightBufferB[index] = c;
 
-                if (len == 0)
+                if (waveLength == 0)
                 {
                     displacementBufferB[index] = new Vector4(0, 0, 0, 0);
                 }
                 else
                 {
-                    displacementBufferB[index].x = -c.y * -(kx / len);
-                    displacementBufferB[index].y = c.x * -(kx / len);
-                    displacementBufferB[index].z = -c.y * -(kz / len);
-                    displacementBufferB[index].w = c.x * -(kz / len);
+                    displacementBufferB[index].x = -c.y * -(waveVectorX / waveLength);
+                    displacementBufferB[index].y = c.x * -(waveVectorX / waveLength);
+                    displacementBufferB[index].z = -c.y * -(waveVectorZ / waveLength);
+                    displacementBufferB[index].w = c.x * -(waveVectorZ / waveLength);
                 }
             }
         }
 
-        PeformFFT();
+        var passes = (int)(Mathf.Log(resolution) / Mathf.Log(2.0f));
 
-        var heightPixels = heightMap.GetRawTextureData<ushort>();
-        var normalPixels = normalMap.GetRawTextureData<ushort>();
-        var displacementPixels = displacementMap.GetRawTextureData<uint>();
+        for (var i = 0; i < passes; i++)
+        {
+            var heightSrc = i % 2 == 1 ? heightBufferA : heightBufferB;
+            var heightDst = i % 2 == 1 ? heightBufferB : heightBufferA;
+            var dispSrc = i % 2 == 1 ? displacementBufferA : displacementBufferB;
+            var dispDst = i % 2 == 1 ? displacementBufferB : displacementBufferA;
+
+            for (var y = 0; y < resolution; y++)
+            {
+                for (var x = 0; x < resolution; x++)
+                {
+                    var bftIdx = 4 * (x + i * resolution);
+
+                    var X = (int)butterflyLookupTable[bftIdx + 0];
+                    var Y = (int)butterflyLookupTable[bftIdx + 1];
+                    Vector2 w;
+                    w.x = butterflyLookupTable[bftIdx + 2];
+                    w.y = butterflyLookupTable[bftIdx + 3];
+
+                    heightDst[x + y * resolution] = FFT(w, heightSrc[X + y * resolution], heightSrc[Y + y * resolution]);
+                    dispDst[x + y * resolution] = FFT(w, dispSrc[X + y * resolution], dispSrc[Y + y * resolution]);
+                }
+            }
+        }
+
+        for (var i = 0; i < passes - 1; i++)
+        {
+            var heightSrc = i % 2 == 0 ? heightBufferA : heightBufferB;
+            var heightDst = i % 2 == 0 ? heightBufferB : heightBufferA;
+            var dispSrc = i % 2 == 0 ? displacementBufferA : displacementBufferB;
+            var dispDst = i % 2 == 0 ? displacementBufferB : displacementBufferA;
+
+            for (var y = 0; y < resolution; y++)
+            {
+                for (var x = 0; x < resolution; x++)
+                {
+                    var bftIdx = 4 * (y + i * resolution);
+
+                    var X = (int)butterflyLookupTable[bftIdx + 0];
+                    var Y = (int)butterflyLookupTable[bftIdx + 1];
+                    Vector2 w;
+                    w.x = butterflyLookupTable[bftIdx + 2];
+                    w.y = butterflyLookupTable[bftIdx + 3];
+
+                    heightDst[x + y * resolution] = FFT(w, heightSrc[x + X * resolution], heightSrc[x + Y * resolution]);
+                    dispDst[x + y * resolution] = FFT(w, dispSrc[x + X * resolution], dispSrc[x + Y * resolution]);
+                }
+            }
+        }
+
+        // Final pass, write directly to textures
+        var heightPixels = heightMap.GetRawTextureData<half>();
+        var displacementPixels = displacementMap.GetRawTextureData<half2>();
 
         for (var y = 0; y < resolution; y++)
         {
             for (var x = 0; x < resolution; x++)
             {
+                // Final FFT
+                var bftIdx = 4 * (y + (passes - 1) * resolution);
+
+                var X = (int)butterflyLookupTable[bftIdx + 0];
+                var Y = (int)butterflyLookupTable[bftIdx + 1];
+                Vector2 w;
+                w.x = butterflyLookupTable[bftIdx + 2];
+                w.y = butterflyLookupTable[bftIdx + 3];
+
+                var heightResult = FFT(w, heightBufferA[x + X * resolution], heightBufferA[x + Y * resolution]);
+                var dispResult = FFT(w, displacementBufferA[x + X * resolution], displacementBufferA[x + Y * resolution]);
+
                 var index = y * resolution + x;
                 var sign = ((x + y) & 1) == 0 ? 1 : -1;
 
-                heightPixels[index] = Mathf.FloatToHalf(heightBufferB[index].x * sign);
+                heightPixels[index] = (half)(heightResult.x * sign);
 
-                var dispX = Mathf.FloatToHalf(-displacementBufferB[index].x * choppyness * sign);
-                var dispZ = Mathf.FloatToHalf(-displacementBufferB[index].z * choppyness * sign);
-                displacementPixels[index] = (ushort)(dispX | dispZ << 16);
+                var dispX = (half)(-dispResult.x * choppyness * sign);
+                var dispZ = (half)(-dispResult.z * choppyness * sign);
+                displacementPixels[index] = half2(dispX, dispZ);
+            }
+        }
+
+        var normalPixels = normalMap.GetRawTextureData<int>();
+
+        // Need to do this after above loop, as it accesses neighboring pixels in the arrays
+        // Could even do this on the GPU... not like we need it on the cpu. (Though folding would be handy for spray, but..)
+        for (var y = 0; y < resolution; y++)
+        {
+            for (var x = 0; x < resolution; x++)
+            {
+                var index = y * resolution + x;
 
                 // Calculate normal from displacement
                 var left = MathUtils.Wrap(x - 1, resolution) + y * resolution;
@@ -156,17 +227,23 @@ public class Ocean : MonoBehaviour
                 var up = x + MathUtils.Wrap(y + 1, resolution) * resolution;
 
                 // Use central diff, then try with finite to see if quality is similar
-                var dx = heightBufferB[right].x * sign - heightBufferB[left].x * sign;
-                var dz = heightBufferB[up].x * sign - heightBufferB[down].x * sign;
                 var delta = resolution / patchSize;
 
-                var xSlope = dx * delta;
-                var zSlope = dz * delta;
-                var normal = new Vector3(xSlope, 2, zSlope).normalized;
+                var xSlope = heightPixels[left] - heightPixels[right];
+                var zSlope = heightPixels[down] - heightPixels[up];
 
-                var normalX = (int)((normal.x * 0.5f + 0.5f) * 255);
-                var normalY = (int)((normal.z * 0.5f + 0.5f) * 255);
-                normalPixels[index] = (ushort)(normalX | normalY << 8);
+                // Store foam (folding) in w
+                var dx = (float2)displacementPixels[left] - (float2)displacementPixels[right];
+                var dz = (float2)displacementPixels[down] - (float2)displacementPixels[right];
+
+                var jx = -dx * delta;
+                var jz = -dz * delta;
+
+                var jacobian = (1 + jx.x) * (1 + jz.y) - jx.y * jz.x;
+
+                var normalFolding = int4((float4(normalize(float3(xSlope * delta, 2, zSlope * delta)) * 0.5f + 0.5f, saturate(jacobian))) * 255);
+
+                normalPixels[index] = normalFolding.x | normalFolding.y << 8 | normalFolding.z << 16 | normalFolding.w << 24;
             }
         }
 
@@ -288,60 +365,5 @@ public class Ocean : MonoBehaviour
         input1.y += w.y * input2.x + w.x * input2.y;
 
         return input1;
-    }
-
-    private void PeformFFT()
-    {
-        var passes = (int)(Mathf.Log(resolution) / Mathf.Log(2.0f));
-
-        for (var i = 0; i < passes; i++)
-        {
-            var heightSrc = i % 2 == 1 ? heightBufferA : heightBufferB;
-            var heightDst = i % 2 == 1 ? heightBufferB : heightBufferA;
-            var dispSrc = i % 2 == 1 ? displacementBufferA : displacementBufferB;
-            var dispDst = i % 2 == 1 ? displacementBufferB : displacementBufferA;
-
-            for (var x = 0; x < resolution; x++)
-            {
-                for (var y = 0; y < resolution; y++)
-                {
-                    var bftIdx = 4 * (x + i * resolution);
-
-                    var X = (int)butterflyLookupTable[bftIdx + 0];
-                    var Y = (int)butterflyLookupTable[bftIdx + 1];
-                    Vector2 w;
-                    w.x = butterflyLookupTable[bftIdx + 2];
-                    w.y = butterflyLookupTable[bftIdx + 3];
-
-                    heightDst[x + y * resolution] = FFT(w, heightSrc[X + y * resolution], heightSrc[Y + y * resolution]);
-                    dispDst[x + y * resolution] = FFT(w, dispSrc[X + y * resolution], dispSrc[Y + y * resolution]);
-                }
-            }
-        }
-
-        for (var i = 0; i < passes; i++)
-        {
-            var heightSrc = i % 2 == 0 ? heightBufferA : heightBufferB;
-            var heightDst = i % 2 == 0 ? heightBufferB : heightBufferA;
-            var dispSrc = i % 2 == 0 ? displacementBufferA : displacementBufferB;
-            var dispDst = i % 2 == 0 ? displacementBufferB : displacementBufferA;
-
-            for (var x = 0; x < resolution; x++)
-            {
-                for (var y = 0; y < resolution; y++)
-                {
-                    var bftIdx = 4 * (y + i * resolution);
-
-                    var X = (int)butterflyLookupTable[bftIdx + 0];
-                    var Y = (int)butterflyLookupTable[bftIdx + 1];
-                    Vector2 w;
-                    w.x = butterflyLookupTable[bftIdx + 2];
-                    w.y = butterflyLookupTable[bftIdx + 3];
-
-                    heightDst[x + y * resolution] = FFT(w, heightSrc[x + X * resolution], heightSrc[x + Y * resolution]);
-                    dispDst[x + y * resolution] = FFT(w, dispSrc[x + X * resolution], dispSrc[x + Y * resolution]);
-                }
-            }
-        }
     }
 }

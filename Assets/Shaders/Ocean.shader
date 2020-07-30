@@ -4,6 +4,11 @@ Shader "Ocean/Ocean Disp"
 	{
 		_Color("Color", Color) = (1, 1, 1, 1)
 		_BumpMap("Normal Map", 2D) = "bump" {}
+
+		[Header(Foam)]
+		_FoamThreshold("Foam Threshold", Range(0, 1)) = 0.3
+		_FoamStrength("Foam Strength", Range(0, 2)) = 1
+		_FoamMap("Foam Map", 2D) = "clear" {}
 	}
 
 	SubShader
@@ -14,15 +19,16 @@ Shader "Ocean/Ocean Disp"
 		CGPROGRAM
 		#pragma surface surf Standard vertex:vert
 
-		sampler2D _OceanHeight, _OceanDisplacement, _OceanNormal, _BumpMap;
+		sampler2D _OceanHeight, _OceanDisplacement, _OceanNormal, _BumpMap, _FoamMap;
 		float4 _OceanNormal_TexelSize;
 		half3 _Color;
-		half _OceanScale;
+		half _FoamStrength, _FoamThreshold, _OceanScale;
 
 		struct Input 
 		{
 			float2 oceanUv;
 			float2 uv_BumpMap;
+			float2 uv_FoamMap;
 		};
 
 		void vert(inout appdata_full v, out Input o)
@@ -50,13 +56,14 @@ Shader "Ocean/Ocean Disp"
 		
 		void surf(Input IN, inout SurfaceOutputStandard o) 
 		{
-			float3 normal;
-			normal.xz = 2.0 * tex2D(_OceanNormal, IN.oceanUv ).rg - 1.0;
-			normal.y = sqrt(1 - saturate(dot(normal.xz, normal.xz)));
+			fixed4 normalFolding = tex2D(_OceanNormal, IN.oceanUv);
 
-			o.Albedo = _Color;
+			fixed foamFactor = saturate(_FoamStrength * (-normalFolding.w + _FoamThreshold));
+			fixed foamOpacity = tex2D(_FoamMap, IN.uv_FoamMap).r;
+
+			o.Albedo = lerp(_Color, 1, foamFactor * foamOpacity);
 			o.Smoothness = 1;
-			o.Normal = normal.xzy;// UnpackNormal(tex2D(_BumpMap, IN.uv_BumpMap));
+			o.Normal = 2.0 * normalFolding.xzy - 1.0;// UnpackNormal(tex2D(_BumpMap, IN.uv_BumpMap));
 		}
 
 		ENDCG
