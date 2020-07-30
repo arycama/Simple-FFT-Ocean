@@ -22,14 +22,16 @@ public class Ocean : MonoBehaviour
     [SerializeField, Pow2(1024)]
     private int resolution = 64;
 
+    [SerializeField, Pow2(4096)]
+    private int batchCount = 64;
+
     [SerializeField]
     private float patchSize = 64;
 
     [SerializeField]
     private float gravity = 9.81f;
 
-    private NativeArray<float2> heightBufferA, heightBufferB;
-    private NativeArray<float4> displacementBufferA, displacementBufferB, spectrum;
+    private NativeArray<float4> spectrum;
     private NativeArray<float> dispersionTable, butterflyLookupTable;
 
     private Texture2D heightMap, normalMap, displacementMap;
@@ -62,12 +64,6 @@ public class Ocean : MonoBehaviour
     private void OnEnable()
     {
         dispersionTable = new NativeArray<float>(resolution * resolution, Allocator.Persistent);
-        heightBufferA = new NativeArray<float2>(resolution * resolution, Allocator.Persistent);
-        heightBufferB = new NativeArray<float2>(resolution * resolution, Allocator.Persistent);
-
-        displacementBufferA = new NativeArray<float4>(resolution * resolution, Allocator.Persistent);
-        displacementBufferB = new NativeArray<float4>(resolution * resolution, Allocator.Persistent);
-
         spectrum = new NativeArray<float4>(resolution * resolution, Allocator.Persistent);
 
         heightMap = new Texture2D(resolution, resolution, TextureFormat.RHalf, false) { filterMode = FilterMode.Point };
@@ -92,9 +88,13 @@ public class Ocean : MonoBehaviour
 
     private void LateUpdate()
     {
-        var dispersion = new OceanDispersionJob(dispersionTable, spectrum, heightBufferB, displacementBufferB, resolution, patchSize, Time.timeSinceLevelLoad);
         var length = resolution * resolution;
-        var batchCount = 64;
+        var heightBufferA = new NativeArray<float2>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        var heightBufferB = new NativeArray<float2>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        var displacementBufferA = new NativeArray<float4>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        var displacementBufferB = new NativeArray<float4>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+
+        var dispersion = new OceanDispersionJob(dispersionTable, spectrum, heightBufferB, displacementBufferB, resolution, patchSize, Time.timeSinceLevelLoad);
 
         jobHandle = dispersion.Schedule(length, batchCount);
 
@@ -231,23 +231,5 @@ public class Ocean : MonoBehaviour
                 }
             }
         }
-    }
-
-    Vector4 FFT(Vector2 w, Vector4 input1, Vector4 input2)
-    {
-        input1.x += w.x * input2.x - w.y * input2.y;
-        input1.y += w.y * input2.x + w.x * input2.y;
-        input1.z += w.x * input2.z - w.y * input2.w;
-        input1.w += w.y * input2.z + w.x * input2.w;
-
-        return input1;
-    }
-
-    Vector2 FFT(Vector2 w, Vector2 input1, Vector2 input2)
-    {
-        input1.x += w.x * input2.x - w.y * input2.y;
-        input1.y += w.y * input2.x + w.x * input2.y;
-
-        return input1;
     }
 }

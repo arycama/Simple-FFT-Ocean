@@ -67,7 +67,7 @@ public struct OceanFFTColumnJob : IJobParallelFor
         w.x = butterflyLookupTable[bftIdx + 2];
         w.y = butterflyLookupTable[bftIdx + 3];
 
-        heightResult[x + y * resolution] = FFT(w, heightSource[x + X * resolution], heightSource[x + Y * resolution]);
-        displacementResult[x + y * resolution] = FFT(w, displacementSource[x + X * resolution], displacementSource[x + Y * resolution]);
+        heightResult[index] = FFT(w, heightSource[x + X * resolution], heightSource[x + Y * resolution]);
+        displacementResult[index] = FFT(w, displacementSource[x + X * resolution], displacementSource[x + Y * resolution]);
     }
 }
