@@ -3,6 +3,7 @@ using Unity.Mathematics;
 using Unity.Jobs;
 using Unity.Collections;
 using Unity.Burst;
+using static Unity.Mathematics.math;
 
 [BurstCompile]
 public struct OceanFFTRowJob : IJobParallelFor
@@ -11,7 +12,7 @@ public struct OceanFFTRowJob : IJobParallelFor
     private int passIndex;
 
     [ReadOnly]
-    private NativeArray<float> butterflyLookupTable;
+    private NativeArray<float4> butterflyLookupTable;
 
     [ReadOnly]
     private NativeArray<float2> heightSource;
@@ -25,7 +26,7 @@ public struct OceanFFTRowJob : IJobParallelFor
     [WriteOnly]
     private NativeArray<float4> displacementResult;
 
-    public OceanFFTRowJob(int resolution, int passIndex, NativeArray<float> butterflyLookupTable, NativeArray<float2> heightSource, NativeArray<float4> displacementSource, NativeArray<float2> heightResult, NativeArray<float4> displacementResult)
+    public OceanFFTRowJob(int resolution, int passIndex, NativeArray<float4> butterflyLookupTable, NativeArray<float2> heightSource, NativeArray<float4> displacementSource, NativeArray<float2> heightResult, NativeArray<float4> displacementResult)
     {
         this.resolution = resolution;
         this.passIndex = passIndex;
@@ -38,20 +39,12 @@ public struct OceanFFTRowJob : IJobParallelFor
 
     float4 FFT(float2 w, float4 input1, float4 input2)
     {
-        input1.x += w.x * input2.x - w.y * input2.y;
-        input1.y += w.y * input2.x + w.x * input2.y;
-        input1.z += w.x * input2.z - w.y * input2.w;
-        input1.w += w.y * input2.z + w.x * input2.w;
-
-        return input1;
+        return input1 + w.xyxy * input2.xxzz + w.yxyx * float4(-1, 1, -1, 1) * input2.yyww;
     }
 
     float2 FFT(float2 w, float2 input1, float2 input2)
     {
-        input1.x += w.x * input2.x - w.y * input2.y;
-        input1.y += w.y * input2.x + w.x * input2.y;
-
-        return input1;
+        return input1 + w * input2.xx + w.yx * float2(-1, 1) * input2.yy;
     }
 
     void IJobParallelFor.Execute(int index)
@@ -59,15 +52,10 @@ public struct OceanFFTRowJob : IJobParallelFor
         var x = index % resolution;
         var y = index / resolution;
 
-        var bftIdx = 4 * (x + passIndex * resolution);
+        var bftIdx = x + passIndex * resolution;
+        var butterfly = butterflyLookupTable[bftIdx];
 
-        var X = (int)butterflyLookupTable[bftIdx + 0];
-        var Y = (int)butterflyLookupTable[bftIdx + 1];
-        float2 w;
-        w.x = butterflyLookupTable[bftIdx + 2];
-        w.y = butterflyLookupTable[bftIdx + 3];
-
-        heightResult[index] = FFT(w, heightSource[X + y * resolution], heightSource[Y + y * resolution]);
-        displacementResult[index] = FFT(w, displacementSource[X + y * resolution], displacementSource[Y + y * resolution]);
+        heightResult[index] = FFT(butterfly.zw, heightSource[(int)butterfly.x + y * resolution], heightSource[(int)butterfly.y + y * resolution]);
+        displacementResult[index] = FFT(butterfly.zw, displacementSource[(int)butterfly.x + y * resolution], displacementSource[(int)butterfly.y + y * resolution]);
     }
 }

@@ -7,23 +7,21 @@ using Unity.Collections;
 
 public class Ocean : MonoBehaviour
 {
-    [SerializeField, Tooltip("Height factor for the waves")]
-    private float amplitude = 0.0002f;
-
+    [Header("Wind")]
     [SerializeField, Min(0), Tooltip("Speed of the wind in meters/sec")]
     private float windSpeed = 32;
 
     [SerializeField, Range(0, 1)]
     private float windAngle = 0.125f;
 
+    [SerializeField, Range(0, 1)]
+    private float directionality = 0.875f;
+
+    [SerializeField, Tooltip("Height factor for the waves")]
+    private float amplitude = 0.0002f;
+
     [SerializeField]
     private float repeatTime = 200;
-
-    [SerializeField, Pow2(1024)]
-    private int resolution = 64;
-
-    [SerializeField, Pow2(4096)]
-    private int batchCount = 64;
 
     [SerializeField]
     private float patchSize = 64;
@@ -31,11 +29,17 @@ public class Ocean : MonoBehaviour
     [SerializeField]
     private float gravity = 9.81f;
 
+    [SerializeField, Pow2(1024)]
+    private int resolution = 64;
+
+    [SerializeField, Pow2(4096)]
+    private int batchCount = 64;
+
     private bool isInitialized;
 
-    private NativeArray<float4> displacementBufferA, displacementBufferB, spectrum;
+    private NativeArray<float4> displacementBufferA, displacementBufferB, butterflyLookupTable, spectrum;
     private NativeArray<float2> heightBufferA, heightBufferB;
-    private NativeArray<float> dispersionTable, butterflyLookupTable;
+    private NativeArray<float> dispersionTable;
 
     private Texture2D heightMap, normalMap, displacementMap;
     private JobHandle jobHandle;
@@ -46,20 +50,54 @@ public class Ocean : MonoBehaviour
         ComputeButterflyLookupTable();
         Random.InitState(0);
 
+        var windRadians = 2 * PI * windAngle;
+        var windDirection = new float2(cos(windRadians), sin(windRadians));
+        var maxWaveHeight = windSpeed * windSpeed / gravity;
+        var minWaveLength = 0.001f;
+        var rand = new Unity.Mathematics.Random(1);
+
         // Init spectrum and dispersion tables
         for (var y = 0; y < resolution; y++)
         {
             for (var x = 0; x < resolution; x++)
             {
                 var index = x + y * resolution;
-                var w_0 = 2.0f * Mathf.PI / repeatTime;
-                var kx = Mathf.PI * (2 * x - resolution) / patchSize;
-                var kz = Mathf.PI * (2 * y - resolution) / patchSize;
-                dispersionTable[index] = Mathf.Floor(Mathf.Sqrt(gravity * Mathf.Sqrt(kx * kx + kz * kz)) / w_0) * w_0;
 
-                var spec = GetSpectrum(x, y);
-                var negSpec = GetSpectrum(-x, -y);
-                spectrum[index] = new Vector4(spec.x, spec.y, negSpec.x, negSpec.y);
+                var waveVector = PI * float2(2 * x - resolution, 2 * y - resolution) / patchSize;
+                var waveLength = length(waveVector);
+
+                var dispersion = 2 * PI / repeatTime;
+                dispersionTable[index] = floor(sqrt(gravity * waveLength) / dispersion) * dispersion;
+
+                if (waveLength == 0)
+                {
+                    spectrum[index] = 0;
+                    continue;
+                }
+
+                var fftNorm = pow(resolution, -0.25f);
+                var philNorm = E / patchSize;
+
+                var baseHeight = exp(-1 / pow(waveLength * maxWaveHeight, 2)) / pow(waveLength, 4);
+                var waveDirection = waveVector / waveLength;
+                var windFactor = float2(dot(waveDirection, windDirection), dot(-waveDirection, windDirection));
+
+                // Remove waves facing away from wind direction
+                var result = amplitude * fftNorm * philNorm * windFactor * float2(sqrt(baseHeight));
+
+                // Remove waves perpendicular to wind
+                // Move waves in wind direction
+                result *= select(1, -sqrt(1 - directionality), windFactor < 0);
+
+                // Remove small wavelengths
+                result *= exp(-pow(waveLength * minWaveLength, 2));
+
+                // Gaussian 
+                var u = 2 * PI * rand.NextFloat2();
+                var v = sqrt(-2 * log(rand.NextFloat2()));
+                var r = float4(v * cos(u), v * sin(u)).xzyw;
+
+                spectrum[index] = 1 / sqrt(2) * r * result.xxyy;
             }
         }
     }
@@ -157,38 +195,6 @@ public class Ocean : MonoBehaviour
         jobHandle = normalFoldJob.Schedule(length, batchCount, jobHandle);
     }
 
-    Vector2 GetSpectrum(int x, int y)
-    {
-        var waveVector = new Vector2(Mathf.PI * (2 * x - resolution) / patchSize, Mathf.PI * (2 * y - resolution) / patchSize);
-        var waveLength = waveVector.magnitude;
-        if (waveLength == 0)
-        {
-            return Vector2.zero;
-        }
-
-        //  Base height
-        var maxWaveHeight = windSpeed * windSpeed / gravity;
-        var spectrum = amplitude * Mathf.Exp(-1.0f / Mathf.Pow(waveLength * maxWaveHeight, 2)) / Mathf.Pow(waveLength, 4);
-
-        // Remove waves perpendicular to wind
-        var windRadians = 2.0f * Mathf.PI * windAngle;
-        var windDirection = new Vector2(Mathf.Cos(windRadians), Mathf.Sin(windRadians));
-        var waveDirection = waveVector / waveLength;
-        var windFactor = Mathf.Pow(Vector2.Dot(waveDirection, windDirection), 6); // Phillips spectrum is pow2, but this looks better
-        spectrum *= windFactor;
-
-        // Remove small wavelengths
-        var minWaveLength = 0.001f;
-        spectrum *= Mathf.Exp(-Mathf.Pow(waveLength * minWaveLength, 2));
-
-        // Gaussian 
-        var u = 2 * Mathf.PI * Random.value;
-        var v = Mathf.Sqrt(-2 * Mathf.Log(Random.value));
-        var r = new Vector2(v * Mathf.Cos(u), v * Mathf.Sin(u));
-
-        return r * Mathf.Sqrt(spectrum / 2.0f);
-    }
-
     int BitReverse(int i)
     {
         int j = i;
@@ -208,7 +214,7 @@ public class Ocean : MonoBehaviour
     void ComputeButterflyLookupTable()
     {
         var passes = (int)Mathf.Log(resolution, 2);
-        butterflyLookupTable = new NativeArray<float>(resolution * passes * 4, Allocator.Persistent);
+        butterflyLookupTable = new NativeArray<float4>(resolution * passes, Allocator.Persistent);
 
         for (var i = 0; i < passes; i++)
         {
@@ -238,17 +244,11 @@ public class Ocean : MonoBehaviour
                     float wr = Mathf.Cos(2.0f * Mathf.PI * (k * nBlocks) / resolution);
                     float wi = Mathf.Sin(2.0f * Mathf.PI * (k * nBlocks) / resolution);
 
-                    int offset1 = 4 * (i1 + i * resolution);
-                    butterflyLookupTable[offset1 + 0] = j1;
-                    butterflyLookupTable[offset1 + 1] = j2;
-                    butterflyLookupTable[offset1 + 2] = wr;
-                    butterflyLookupTable[offset1 + 3] = wi;
+                    int offset1 = (i1 + i * resolution);
+                    butterflyLookupTable[offset1] = float4(j1, j2, wr, wi);
 
-                    int offset2 = 4 * (i2 + i * resolution);
-                    butterflyLookupTable[offset2 + 0] = j1;
-                    butterflyLookupTable[offset2 + 1] = j2;
-                    butterflyLookupTable[offset2 + 2] = -wr;
-                    butterflyLookupTable[offset2 + 3] = -wi;
+                    int offset2 = (i2 + i * resolution);
+                    butterflyLookupTable[offset2] = float4(j1, j2, -wr, -wi);
                 }
             }
         }

@@ -25,7 +25,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     - _FoamMap:
         m_Texture: {fileID: 2800000, guid: 25fd4376f156aa843964ce73e403189a, type: 3}
-        m_Scale: {x: 4, y: 4}
+        m_Scale: {x: 8, y: 8}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
         m_Texture: {fileID: 0}
@@ -37,8 +37,8 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Floats:
     - _FoamCutoff: 0.76
-    - _FoamStrength: 1
-    - _FoamThreshold: 1
+    - _FoamStrength: 2
+    - _FoamThreshold: 0.524
     - _FresnelFactor: 8
     - _Offset: 0.5
     - _SunPow: 256

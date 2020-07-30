@@ -181,14 +181,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3b5451f7394f81546892b5a80f169d09, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  amplitude: 0.0002
   windSpeed: 32
   windAngle: 0.125
-  choppyness: 1
+  directionality: 0.875
+  amplitude: 1
   repeatTime: 200
-  resolution: 128
   patchSize: 64
   gravity: 9.81
+  resolution: 128
+  batchCount: 64
 --- !u!1 &1645229917
 GameObject:
   m_ObjectHideFlags: 0
