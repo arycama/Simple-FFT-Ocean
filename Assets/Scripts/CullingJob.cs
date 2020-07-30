@@ -31,7 +31,7 @@ namespace FoxieGames
             for (var i = 0; i < batchVisibility.instancesCount; i++)
             {
                 var positionScale = positions[i];
-                var position = (Vector3)positionScale;// + cameraPosition;
+                var position = (Vector3)positionScale + cameraPosition;
                 var scale = positionScale.w;
 
                 var corner00 = position;

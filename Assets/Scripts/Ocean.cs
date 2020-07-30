@@ -3,19 +3,22 @@ using Random = UnityEngine.Random;
 
 public class Ocean : MonoBehaviour
 {
-    [SerializeField]
+    [SerializeField, Tooltip("Height factor for the waves")]
     private float amplitude = 0.0002f;
 
-    [SerializeField]
-    private Vector2 windSpeed = new Vector2(32.0f, 32.0f);
+    [SerializeField, Min(0), Tooltip("Speed of the wind in meters/sec")]
+    private float windSpeed = 32;
 
-    [SerializeField, Range(-2, 2)]
-    private float choppyness = -1.0f;
+    [SerializeField, Range(0, 1)]
+    private float windAngle;
+
+    [SerializeField, Range(0, 1)]
+    private float choppyness = 1;
 
     [SerializeField]
     private float repeatTime = 200;
 
-    [SerializeField]
+    [SerializeField, Pow2(1024)]
     private int resolution = 64;
 
     [SerializeField]
@@ -30,15 +33,11 @@ public class Ocean : MonoBehaviour
     private float[] dispersionTable;
     private float[] butterflyLookupTable = null;
 
-    public Texture2D heightMap, normalMap, displacementMap;
-    private Color[] displacementPixels, normalPixels;
-    private ushort[] heightPixels;
+    private Texture2D heightMap, normalMap, displacementMap;
 
-    private void OnEnable()
+    public void Recalculate()
     {
         ComputeButterflyLookupTable();
-
-        dispersionTable = new float[(resolution + 1) * (resolution + 1)];
 
         for (var y = 0; y <= resolution; y++)
         {
@@ -52,17 +51,10 @@ public class Ocean : MonoBehaviour
             }
         }
 
-        heightBuffer = new Vector2[2, resolution * resolution];
-        slopeBuffer = new Vector4[2, resolution * resolution];
-        displacementBuffer = new Vector4[2, resolution * resolution];
-
-        spectrum = new Vector2[(resolution + 1) * (resolution + 1)];
-        spectruconj = new Vector2[(resolution + 1) * (resolution + 1)];
-
         Random.InitState(0);
-        for (var y = 0; y < (resolution + 1); y++)
+        for (var y = 0; y <= resolution; y++)
         {
-            for (var x = 0; x < (resolution + 1); x++)
+            for (var x = 0; x <= resolution; x++)
             {
                 var index = y * (resolution + 1) + x;
                 spectrum[index] = GetSpectrum(x, y);
@@ -70,29 +62,38 @@ public class Ocean : MonoBehaviour
                 spectruconj[index].y *= -1.0f;
             }
         }
+    }
+
+    private void OnEnable()
+    {
+        dispersionTable = new float[(resolution + 1) * (resolution + 1)];
+        heightBuffer = new Vector2[2, resolution * resolution];
+        slopeBuffer = new Vector4[2, resolution * resolution];
+        displacementBuffer = new Vector4[2, resolution * resolution];
+
+        spectrum = new Vector2[(resolution + 1) * (resolution + 1)];
+        spectruconj = new Vector2[(resolution + 1) * (resolution + 1)];
 
         heightMap = new Texture2D(resolution, resolution, TextureFormat.RHalf, false) { filterMode = FilterMode.Point };
         displacementMap = new Texture2D(resolution, resolution, TextureFormat.RGHalf, false) { filterMode = FilterMode.Point };
-        normalMap = new Texture2D(resolution, resolution, TextureFormat.RG16, false) { filterMode = FilterMode.Point };
-
-        heightPixels = new ushort[resolution * resolution];
-        normalPixels = new Color[resolution * resolution];
-        displacementPixels = new Color[resolution * resolution];
+        normalMap = new Texture2D(resolution, resolution, TextureFormat.RG16, false);
 
         Shader.SetGlobalTexture("_OceanHeight", heightMap);
         Shader.SetGlobalTexture("_OceanNormal", normalMap);
         Shader.SetGlobalTexture("_OceanDisplacement", displacementMap);
         Shader.SetGlobalFloat("_OceanScale", patchSize);
+
+        Recalculate();
     }
 
     private void Update()
     {
-        var t = Time.timeSinceLevelLoad;
 
-        for (int y = 0; y < resolution; y++)
+        for (var y = 0; y < resolution; y++)
         {
             var kz = Mathf.PI * (2.0f * y - resolution) / patchSize;
-            for (int x = 0; x < resolution; x++)
+
+            for (var x = 0; x < resolution; x++)
             {
                 var kx = Mathf.PI * (2 * x - resolution) / patchSize;
                 var len = Mathf.Sqrt(kx * kx + kz * kz);
@@ -101,7 +102,7 @@ public class Ocean : MonoBehaviour
                 // Init spectrum
                 int iindex = y * (resolution + 1) + x;
 
-                float omegat = dispersionTable[iindex] * t;
+                float omegat = dispersionTable[iindex] * Time.timeSinceLevelLoad;
 
                 float cos = Mathf.Cos(omegat);
                 float sin = Mathf.Sin(omegat);
@@ -114,21 +115,12 @@ public class Ocean : MonoBehaviour
 
                 var c = new Vector2(c0a + c1a, c0b + c1b);
 
-                heightBuffer[1, index].x = c.x;
-                heightBuffer[1, index].y = c.y;
+                heightBuffer[1, index] = c;
+                slopeBuffer[1, index] = new Vector4(-c.y * kx, c.x * kx, -c.y * kz, c.x * kz);
 
-                slopeBuffer[1, index].x = -c.y * kx;
-                slopeBuffer[1, index].y = c.x * kx;
-
-                slopeBuffer[1, index].z = -c.y * kz;
-                slopeBuffer[1, index].w = c.x * kz;
-
-                if (len < 0.000001f)
+                if (len == 0)
                 {
-                    displacementBuffer[1, index].x = 0.0f;
-                    displacementBuffer[1, index].y = 0.0f;
-                    displacementBuffer[1, index].z = 0.0f;
-                    displacementBuffer[1, index].w = 0.0f;
+                    displacementBuffer[1, index] = new Vector4(0, 0, 0, 0);
                 }
                 else
                 {
@@ -140,7 +132,11 @@ public class Ocean : MonoBehaviour
             }
         }
 
-        PeformFFT(heightBuffer, slopeBuffer, displacementBuffer);
+        PeformFFT();
+
+        var heightPixels = heightMap.GetRawTextureData<ushort>();
+        var normalPixels = normalMap.GetRawTextureData<ushort>();
+        var displacementPixels = displacementMap.GetRawTextureData<uint>();
 
         // Apply to mesh (Or textures)
         for (var y = 0; y < resolution; y++)
@@ -151,62 +147,52 @@ public class Ocean : MonoBehaviour
                 var sign = ((x + y) & 1) == 0 ? 1 : -1;
 
                 // Textures
-                var dispX = displacementBuffer[1, index].x * choppyness * sign;
-                var dispZ =  displacementBuffer[1, index].z * choppyness * sign;
+                var dispX = Mathf.FloatToHalf(-displacementBuffer[1, index].x * choppyness * sign);
+                var dispZ = Mathf.FloatToHalf(-displacementBuffer[1, index].z * choppyness * sign);
 
+                var n = new Vector3(-slopeBuffer[1, index].x * sign, 1.0f, -slopeBuffer[1, index].z * sign).normalized;
+                var normalX = (int)((n.x * 0.5f + 0.5f) * 255);
+                var normalY = (int)((n.z * 0.5f + 0.5f) * 255);
+                normalPixels[index] = (ushort)(normalX | normalY << 8);
                 heightPixels[index] = Mathf.FloatToHalf(heightBuffer[1, index].x * sign);
-                displacementPixels[index] = new Color(dispX, dispZ, 0, 0);
-                normalPixels[index] = new Color((-slopeBuffer[1, index].x * sign) * 0.5f + 0.5f, (-slopeBuffer[1, index].z * sign) * 0.5f + 0.5f, 0);
+                displacementPixels[index] = (ushort)(dispX | dispZ << 16);
             }
         }
 
-        heightMap.SetPixelData(heightPixels, 0);
-        displacementMap.SetPixels(displacementPixels, 0);
-        normalMap.SetPixels(normalPixels, 0);
-
-        heightMap.Apply(false, false);
-        displacementMap.Apply(false, false);
-        normalMap.Apply(false, false);
+        heightMap.Apply();
+        displacementMap.Apply();
+        normalMap.Apply();
     }
 
     Vector2 GetSpectrum(int x, int y)
     {
-        // Gaussian Random Number
-        float x1, x2, w;
-        do
-        {
-            x1 = 2.0f * Random.value - 1.0f;
-            x2 = 2.0f * Random.value - 1.0f;
-            w = x1 * x1 + x2 * x2;
-        }
-        while (w >= 1.0f);
-
-        w = Mathf.Sqrt((-2.0f * Mathf.Log(w)) / w);
-        var r = new Vector2(x1 * w, x2 * w);
-
-        Vector2 k = new Vector2(Mathf.PI * (2 * x - resolution) / patchSize, Mathf.PI * (2 * y - resolution) / patchSize);
-        float k_length = k.magnitude;
-        if (k_length < 0.000001f)
+        var waveVector = new Vector2(Mathf.PI * (2 * x - resolution) / patchSize, Mathf.PI * (2 * y - resolution) / patchSize);
+        var waveLength = waveVector.magnitude;
+        if (waveLength == 0)
         {
             return Vector2.zero;
         }
 
-        float k_length2 = k_length * k_length;
-        float k_length4 = k_length2 * k_length2;
+        //  Base height
+        var maxWaveHeight = windSpeed * windSpeed / gravity;
+        var spectrum = amplitude * Mathf.Exp(-1.0f / Mathf.Pow(waveLength * maxWaveHeight, 2)) / Mathf.Pow(waveLength, 4);
 
-        k.Normalize();
+        // Remove waves perpendicular to wind
+        var windRadians = 2.0f * Mathf.PI * windAngle;
+        var windDirection = new Vector2(Mathf.Cos(windRadians), Mathf.Sin(windRadians));
+        var waveDirection = waveVector / waveLength;
+        var windFactor = Mathf.Pow(Vector2.Dot(waveDirection, windDirection), 6);
+        spectrum *= windFactor;
 
-        float k_dot_w = Vector2.Dot(k, windSpeed.normalized);
-        float k_dot_w2 = k_dot_w * k_dot_w * k_dot_w * k_dot_w * k_dot_w * k_dot_w;
+        // Remove small wavelengths
+        var minWaveLength = 0.001f;
+        spectrum *= Mathf.Exp(-Mathf.Pow(waveLength * minWaveLength, 2));
 
-        float w_length = windSpeed.magnitude;
-        float L = w_length * w_length / gravity;
-        float L2 = L * L;
+        // Gaussian 
+        var u = 2 * Mathf.PI * Random.value;
+        var v = Mathf.Sqrt(-2 * Mathf.Log(Random.value));
+        var r = new Vector2(v * Mathf.Cos(u), v * Mathf.Sin(u));
 
-        float damping = 0.001f;
-        float l2 = L2 * damping * damping;
-
-        var spectrum = amplitude * Mathf.Exp(-1.0f / (k_length2 * L2)) / k_length4 * k_dot_w2 * Mathf.Exp(-k_length2 * l2);
         return r * Mathf.Sqrt(spectrum / 2.0f);
     }
 
@@ -293,7 +279,7 @@ public class Ocean : MonoBehaviour
         return input1;
     }
 
-    private void PeformFFT(Vector2[,] data0, Vector4[,] data1, Vector4[,] data2)
+    private void PeformFFT()
     {
         var passes = (int)(Mathf.Log(resolution) / Mathf.Log(2.0f));
 
@@ -315,9 +301,9 @@ public class Ocean : MonoBehaviour
                     w.x = butterflyLookupTable[bftIdx + 2];
                     w.y = butterflyLookupTable[bftIdx + 3];
 
-                    data0[idx, x + y * resolution] = FFT(w, data0[idx1, X + y * resolution], data0[idx1, Y + y * resolution]);
-                    data1[idx, x + y * resolution] = FFT(w, data1[idx1, X + y * resolution], data1[idx1, Y + y * resolution]);
-                    data2[idx, x + y * resolution] = FFT(w, data2[idx1, X + y * resolution], data2[idx1, Y + y * resolution]);
+                    heightBuffer[idx, x + y * resolution] = FFT(w, heightBuffer[idx1, X + y * resolution], heightBuffer[idx1, Y + y * resolution]);
+                    slopeBuffer[idx, x + y * resolution] = FFT(w, slopeBuffer[idx1, X + y * resolution], slopeBuffer[idx1, Y + y * resolution]);
+                    displacementBuffer[idx, x + y * resolution] = FFT(w, displacementBuffer[idx1, X + y * resolution], displacementBuffer[idx1, Y + y * resolution]);
                 }
             }
         }
@@ -339,9 +325,9 @@ public class Ocean : MonoBehaviour
                     w.x = butterflyLookupTable[bftIdx + 2];
                     w.y = butterflyLookupTable[bftIdx + 3];
 
-                    data0[idx, x + y * resolution] = FFT(w, data0[idx1, x + X * resolution], data0[idx1, x + Y * resolution]);
-                    data1[idx, x + y * resolution] = FFT(w, data1[idx1, x + X * resolution], data1[idx1, x + Y * resolution]);
-                    data2[idx, x + y * resolution] = FFT(w, data2[idx1, x + X * resolution], data2[idx1, x + Y * resolution]);
+                    heightBuffer[idx, x + y * resolution] = FFT(w, heightBuffer[idx1, x + X * resolution], heightBuffer[idx1, x + Y * resolution]);
+                    slopeBuffer[idx, x + y * resolution] = FFT(w, slopeBuffer[idx1, x + X * resolution], slopeBuffer[idx1, x + Y * resolution]);
+                    displacementBuffer[idx, x + y * resolution] = FFT(w, displacementBuffer[idx1, x + X * resolution], displacementBuffer[idx1, x + Y * resolution]);
                 }
             }
         }

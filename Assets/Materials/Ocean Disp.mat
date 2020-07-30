@@ -33,6 +33,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Floats:
     - _FresnelFactor: 8
+    - _Offset: 0.5
     - _SunPow: 256
     m_Colors:
     - _Color: {r: 0.015686275, g: 0.1137255, b: 0.21568629, a: 1}

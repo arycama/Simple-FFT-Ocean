@@ -153,7 +153,7 @@ namespace FoxieGames
                     cullingContext.visibleIndices[batchVisibility.offset + j] = j;
 
                     var matrix = matrixList[j];
-                    var position = matrix;// + (Vector4)newPosition;
+                    var position = matrix + (Vector4)newPosition;
                     matrices[j] = Matrix4x4.TRS(position, Quaternion.identity, new Vector3(position.w, position.w, position.w));
                 }
             }
