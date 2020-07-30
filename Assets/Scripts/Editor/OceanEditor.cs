@@ -13,7 +13,11 @@ public class OceanEditor : Editor
 
             if(changed.changed && EditorApplication.isPlaying)
             {
-                (target as Ocean).Recalculate();
+                var ocean = target as Ocean;
+                if(ocean.enabled)
+                {
+                    ocean.Recalculate();
+                }
             }
         }
 

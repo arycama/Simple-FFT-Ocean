@@ -31,7 +31,10 @@ public class Ocean : MonoBehaviour
     [SerializeField]
     private float gravity = 9.81f;
 
-    private NativeArray<float4> spectrum;
+    private bool isInitialized;
+
+    private NativeArray<float4> displacementBufferA, displacementBufferB, spectrum;
+    private NativeArray<float2> heightBufferA, heightBufferB;
     private NativeArray<float> dispersionTable, butterflyLookupTable;
 
     private Texture2D heightMap, normalMap, displacementMap;
@@ -39,8 +42,8 @@ public class Ocean : MonoBehaviour
 
     public void Recalculate()
     {
+        jobHandle.Complete();
         ComputeButterflyLookupTable();
-
         Random.InitState(0);
 
         // Init spectrum and dispersion tables
@@ -78,45 +81,63 @@ public class Ocean : MonoBehaviour
         Recalculate();
     }
 
+    private void OnDisable()
+    {
+        jobHandle.Complete();
+        dispersionTable.Dispose();
+        spectrum.Dispose();
+        butterflyLookupTable.Dispose();
+        isInitialized = false;
+    }
+
     private void Update()
     {
         jobHandle.Complete();
+
+        if (isInitialized)
+        {
+            heightBufferA.Dispose();
+            heightBufferB.Dispose();
+            displacementBufferA.Dispose();
+            displacementBufferB.Dispose();
+        }
+
+        // Apply previous changes and start a new calculation
         heightMap.Apply();
         displacementMap.Apply();
         normalMap.Apply();
-    }
 
-    private void LateUpdate()
-    {
         var length = resolution * resolution;
-        var heightBufferA = new NativeArray<float2>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-        var heightBufferB = new NativeArray<float2>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-        var displacementBufferA = new NativeArray<float4>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-        var displacementBufferB = new NativeArray<float4>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        heightBufferA = new NativeArray<float2>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        heightBufferB = new NativeArray<float2>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        displacementBufferA = new NativeArray<float4>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        displacementBufferB = new NativeArray<float4>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        isInitialized = true;
 
         var dispersion = new OceanDispersionJob(dispersionTable, spectrum, heightBufferB, displacementBufferB, resolution, patchSize, Time.timeSinceLevelLoad);
 
         jobHandle = dispersion.Schedule(length, batchCount);
 
-        var passes = (int)(Mathf.Log(resolution) / Mathf.Log(2.0f));
+        var passes = (int)Mathf.Log(resolution, 2);
 
-        for (var i = 0; i < passes; i++)
+        int j = 0;
+        for (var i = 0; i < passes; i++, j++)
         {
-            var heightSrc = i % 2 == 1 ? heightBufferA : heightBufferB;
-            var heightDst = i % 2 == 1 ? heightBufferB : heightBufferA;
-            var dispSrc = i % 2 == 1 ? displacementBufferA : displacementBufferB;
-            var dispDst = i % 2 == 1 ? displacementBufferB : displacementBufferA;
+            var heightSrc = j % 2 == 1 ? heightBufferA : heightBufferB;
+            var heightDst = j % 2 == 1 ? heightBufferB : heightBufferA;
+            var dispSrc = j % 2 == 1 ? displacementBufferA : displacementBufferB;
+            var dispDst = j % 2 == 1 ? displacementBufferB : displacementBufferA;
 
             var fftJob = new OceanFFTRowJob(resolution, i, butterflyLookupTable, heightSrc, dispSrc, heightDst, dispDst);
             jobHandle = fftJob.Schedule(length, batchCount, jobHandle);
         }
 
-        for (var i = 0; i < passes - 1; i++)
+        for (var i = 0; i < passes - 1; i++, j++)
         {
-            var heightSrc = i % 2 == 0 ? heightBufferA : heightBufferB;
-            var heightDst = i % 2 == 0 ? heightBufferB : heightBufferA;
-            var dispSrc = i % 2 == 0 ? displacementBufferA : displacementBufferB;
-            var dispDst = i % 2 == 0 ? displacementBufferB : displacementBufferA;
+            var heightSrc = j % 2 == 1 ? heightBufferA : heightBufferB;
+            var heightDst = j % 2 == 1 ? heightBufferB : heightBufferA;
+            var dispSrc = j % 2 == 1 ? displacementBufferA : displacementBufferB;
+            var dispDst = j % 2 == 1 ? displacementBufferB : displacementBufferA;
 
             var fftJob = new OceanFFTColumnJob(resolution, i, butterflyLookupTable, heightSrc, dispSrc, heightDst, dispDst);
             jobHandle = fftJob.Schedule(length, batchCount, jobHandle);
@@ -186,7 +207,7 @@ public class Ocean : MonoBehaviour
 
     void ComputeButterflyLookupTable()
     {
-        var passes = (int)(Mathf.Log(resolution) / Mathf.Log(2.0f));
+        var passes = (int)Mathf.Log(resolution, 2);
         butterflyLookupTable = new NativeArray<float>(resolution * passes * 4, Allocator.Persistent);
 
         for (var i = 0; i < passes; i++)
