@@ -5,6 +5,11 @@ using static Unity.Mathematics.math;
 using Unity.Jobs;
 using Unity.Collections;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
+[ExecuteAlways]
 public class Ocean : MonoBehaviour
 {
     [Header("Wind")]
@@ -53,53 +58,14 @@ public class Ocean : MonoBehaviour
         var windRadians = 2 * PI * windAngle;
         var windDirection = new float2(cos(windRadians), sin(windRadians));
         var maxWaveHeight = windSpeed * windSpeed / gravity;
-        var minWaveLength = 0.001f;
         var rand = new Unity.Mathematics.Random(1);
 
-        // Init spectrum and dispersion tables
-        for (var y = 0; y < resolution; y++)
-        {
-            for (var x = 0; x < resolution; x++)
-            {
-                var index = x + y * resolution;
+        var spectrumJob = new OceanSpectrumJob(amplitude, directionality, gravity, maxWaveHeight, 0.001f, patchSize, repeatTime, resolution, windDirection, rand, dispersionTable, spectrum);
+        jobHandle = spectrumJob.Schedule(resolution * resolution, 64);
 
-                var waveVector = PI * float2(2 * x - resolution, 2 * y - resolution) / patchSize;
-                var waveLength = length(waveVector);
 
-                var dispersion = 2 * PI / repeatTime;
-                dispersionTable[index] = floor(sqrt(gravity * waveLength) / dispersion) * dispersion;
 
-                if (waveLength == 0)
-                {
-                    spectrum[index] = 0;
-                    continue;
-                }
-
-                var fftNorm = pow(resolution, -0.25f);
-                var philNorm = E / patchSize;
-
-                var baseHeight = exp(-1 / pow(waveLength * maxWaveHeight, 2)) / pow(waveLength, 4);
-                var waveDirection = waveVector / waveLength;
-                var windFactor = float2(dot(waveDirection, windDirection), dot(-waveDirection, windDirection));
-
-                // Remove waves facing away from wind direction
-                var result = amplitude * fftNorm * philNorm * windFactor * float2(sqrt(baseHeight));
-
-                // Remove waves perpendicular to wind
-                // Move waves in wind direction
-                result *= select(1, -sqrt(1 - directionality), windFactor < 0);
-
-                // Remove small wavelengths
-                result *= exp(-pow(waveLength * minWaveLength, 2));
-
-                // Gaussian 
-                var u = 2 * PI * rand.NextFloat2();
-                var v = sqrt(-2 * log(rand.NextFloat2()));
-                var r = float4(v * cos(u), v * sin(u)).xzyw;
-
-                spectrum[index] = 1 / sqrt(2) * r * result.xxyy;
-            }
-        }
+        jobHandle.Complete();
     }
 
     private void OnEnable()
@@ -117,6 +83,11 @@ public class Ocean : MonoBehaviour
         Shader.SetGlobalFloat("_OceanScale", patchSize);
 
         Recalculate();
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+            EditorApplication.update += UpdateSimulation;
+#endif
     }
 
     private void OnDisable()
@@ -126,9 +97,19 @@ public class Ocean : MonoBehaviour
         spectrum.Dispose();
         butterflyLookupTable.Dispose();
         isInitialized = false;
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+            EditorApplication.update -= UpdateSimulation;
+#endif
     }
 
     private void Update()
+    {
+        UpdateSimulation();
+    }
+
+    private void UpdateSimulation()
     {
         jobHandle.Complete();
 
@@ -152,7 +133,13 @@ public class Ocean : MonoBehaviour
         displacementBufferB = new NativeArray<float4>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
         isInitialized = true;
 
-        var dispersion = new OceanDispersionJob(dispersionTable, spectrum, heightBufferB, displacementBufferB, resolution, patchSize, Time.timeSinceLevelLoad);
+        var time = Time.timeSinceLevelLoad;
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+            time = (float)UnityEditor.EditorApplication.timeSinceStartup;
+#endif
+
+        var dispersion = new OceanDispersionJob(dispersionTable, spectrum, heightBufferB, displacementBufferB, resolution, patchSize, time);
 
         jobHandle = dispersion.Schedule(length, batchCount);
 
