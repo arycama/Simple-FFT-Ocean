@@ -365,10 +365,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3b5451f7394f81546892b5a80f169d09, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  windSpeed: 8
+  windSpeed: 12
   windAngle: 0.452
   directionality: 0.875
-  patchSize: 128
+  patchSize: 289
   gravity: 9.81
   resolution: 64
 --- !u!1 &1578549009

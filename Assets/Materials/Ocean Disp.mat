@@ -21,7 +21,7 @@ Material:
     m_TexEnvs:
     - _BumpMap:
         m_Texture: {fileID: 2800000, guid: 2d8840ac890c4e143b73308fec88efa2, type: 3}
-        m_Scale: {x: 0.0625, y: 0.0625}
+        m_Scale: {x: 0.018768769, y: 0.018768769}
         m_Offset: {x: 0, y: 0}
     - _FoamMap:
         m_Texture: {fileID: 2800000, guid: 25fd4376f156aa843964ce73e403189a, type: 3}
@@ -35,6 +35,10 @@ Material:
         m_Texture: {fileID: 8900000, guid: 6759f96142e2d7249b93107979b8428d, type: 2}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _WaveNoise:
+        m_Texture: {fileID: 2800000, guid: b433c5f00e72e8343991d536d63984a1, type: 3}
+        m_Scale: {x: 0.002170138, y: 0.002170138}
+        m_Offset: {x: 0.05, y: 0.065}
     m_Floats:
     - Normalize: 1
     - _FoamCutoff: 0.76
