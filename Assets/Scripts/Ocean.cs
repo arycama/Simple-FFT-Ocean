@@ -22,8 +22,8 @@ public class Ocean : MonoBehaviour
     [SerializeField, Range(0, 1)]
     private float directionality = 0.875f;
 
-    [SerializeField, Tooltip("Height factor for the waves")]
-    private float amplitude = 0.0002f;
+    [SerializeField, Range(0, 2), Tooltip("Height factor for the waves")]
+    private float amplitude = 1;
 
     [SerializeField]
     private float repeatTime = 200;
@@ -49,38 +49,20 @@ public class Ocean : MonoBehaviour
     private Texture2D heightMap, normalMap, displacementMap;
     private JobHandle jobHandle;
 
-    public void Recalculate()
-    {
-        jobHandle.Complete();
-        ComputeButterflyLookupTable();
-        Random.InitState(0);
-
-        var windRadians = 2 * PI * windAngle;
-        var windDirection = new float2(cos(windRadians), sin(windRadians));
-        var maxWaveHeight = windSpeed * windSpeed / gravity;
-        var rand = new Unity.Mathematics.Random(1);
-
-        var spectrumJob = new OceanSpectrumJob(amplitude, directionality, gravity, maxWaveHeight, 0.001f, patchSize, repeatTime, resolution, windDirection, rand, dispersionTable, spectrum);
-        jobHandle = spectrumJob.Schedule(resolution * resolution, 64);
-
-
-
-        jobHandle.Complete();
-    }
-
-    private void OnEnable()
+    public void ReInitialize()
     {
         dispersionTable = new NativeArray<float>(resolution * resolution, Allocator.Persistent);
         spectrum = new NativeArray<float4>(resolution * resolution, Allocator.Persistent);
 
-        heightMap = new Texture2D(resolution, resolution, TextureFormat.RHalf, false) { filterMode = FilterMode.Point };
-        displacementMap = new Texture2D(resolution, resolution, TextureFormat.RGHalf, false) { filterMode = FilterMode.Point };
+        heightMap = new Texture2D(resolution, resolution, TextureFormat.RHalf, false);
+        displacementMap = new Texture2D(resolution, resolution, TextureFormat.RGHalf, false);
         normalMap = new Texture2D(resolution, resolution, TextureFormat.RGBA32, true);
+
+        ComputeButterflyLookupTable();
 
         Shader.SetGlobalTexture("_OceanHeight", heightMap);
         Shader.SetGlobalTexture("_OceanNormal", normalMap);
         Shader.SetGlobalTexture("_OceanDisplacement", displacementMap);
-        Shader.SetGlobalFloat("_OceanScale", patchSize);
 
         Recalculate();
 
@@ -90,7 +72,7 @@ public class Ocean : MonoBehaviour
 #endif
     }
 
-    private void OnDisable()
+    public void Cleanup()
     {
         jobHandle.Complete();
         dispersionTable.Dispose();
@@ -104,8 +86,39 @@ public class Ocean : MonoBehaviour
 #endif
     }
 
+    public void Recalculate()
+    {
+        jobHandle.Complete();
+        Random.InitState(0);
+
+        var windRadians = 2 * PI * windAngle;
+        var windDirection = new float2(cos(windRadians), sin(windRadians));
+        var maxWaveHeight = windSpeed * windSpeed / gravity;
+        var rand = new Unity.Mathematics.Random(1);
+
+        var spectrumJob = new OceanSpectrumJob(amplitude, directionality, gravity, maxWaveHeight, 0.001f, patchSize, repeatTime, resolution, windDirection, rand, dispersionTable, spectrum);
+        jobHandle = spectrumJob.Schedule(resolution * resolution, 64);
+        jobHandle.Complete();
+
+        Shader.SetGlobalFloat("_OceanScale", patchSize);
+        Shader.SetGlobalVector("_WindVector", (Vector2)windDirection * windSpeed);
+    }
+
+    private void OnEnable()
+    {
+        ReInitialize();
+    }
+
+    private void OnDisable()
+    {
+        Cleanup();
+    }
+
     private void Update()
     {
+#if UNITY_EDITOR
+        if(Application.isPlaying)
+#endif
         UpdateSimulation();
     }
 
@@ -136,7 +149,7 @@ public class Ocean : MonoBehaviour
         var time = Time.timeSinceLevelLoad;
 #if UNITY_EDITOR
         if (!Application.isPlaying)
-            time = (float)UnityEditor.EditorApplication.timeSinceStartup;
+            time = (float)EditorApplication.timeSinceStartup;
 #endif
 
         var dispersion = new OceanDispersionJob(dispersionTable, spectrum, heightBufferB, displacementBufferB, resolution, patchSize, time);

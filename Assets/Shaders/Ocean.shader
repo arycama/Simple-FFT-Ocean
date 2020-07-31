@@ -20,15 +20,15 @@ Shader "Ocean/Ocean Disp"
 		#pragma surface surf Standard vertex:vert
 
 		sampler2D _OceanHeight, _OceanDisplacement, _OceanNormal, _BumpMap, _FoamMap;
-		float4 _OceanNormal_TexelSize;
+		float4 _OceanNormal_TexelSize, _BumpMap_ST, _FoamMap_ST;
 		half3 _Color;
+		half2 _WindVector;
 		half _FoamStrength, _FoamThreshold, _OceanScale;
 
 		struct Input 
 		{
 			float2 oceanUv;
-			float2 uv_BumpMap;
-			float2 uv_FoamMap;
+			float4 bumpFoamUv;
 		};
 
 		void vert(inout appdata_full v, out Input o)
@@ -46,24 +46,33 @@ Shader "Ocean/Ocean Disp"
 
 			v.vertex.xyz += mul(unity_WorldToObject, displacement);
 
-			v.normal.xz = 2.0 * tex2Dlod(_OceanNormal, float4(oceanUv, 0, 0)).rg - 1.0;
-			v.normal.y = sqrt(1 - saturate(dot(v.normal.xz, v.normal.xz)));
 			v.normal = float3(0, 1, 0);
-
-			v.tangent = float4(cross(v.normal, float3(0, 0, 1)) , -1);
+			v.tangent = float4(1, 0, 0, -1);
 			v.texcoord = float4(oceanUv, 0, 0);
+
+			// Bump foam UV, scroll in wind direction
+			o.bumpFoamUv.xy = (worldPos.xz + _BumpMap_ST.zw * _WindVector * _Time.y) * _BumpMap_ST.xy;
+			o.bumpFoamUv.zw = (worldPos.xz + _FoamMap_ST.zw * _WindVector * _Time.y) * _FoamMap_ST.xy;
 		}
 		
 		void surf(Input IN, inout SurfaceOutputStandard o) 
 		{
 			fixed4 normalFolding = tex2D(_OceanNormal, IN.oceanUv);
 
+			fixed3 geomNormal = 2.0 * normalFolding - 1.0;
+			fixed3 geomTangent = cross(geomNormal, float3(0, 0, 1));
+			fixed3 geomBitangent = cross(geomTangent, geomNormal);
+
+			fixed3 normalMap = UnpackNormal(tex2D(_BumpMap, IN.bumpFoamUv.xy));
+			fixed3 normal = normalMap.x * geomTangent + normalMap.y * geomBitangent + normalMap.z * geomNormal;
+
+			// Foam
 			fixed foamFactor = saturate(_FoamStrength * (-normalFolding.w + _FoamThreshold));
-			fixed foamOpacity = tex2D(_FoamMap, IN.uv_FoamMap).r;
+			fixed foamOpacity = tex2D(_FoamMap, IN.bumpFoamUv.zw).r;
 
 			o.Albedo = lerp(_Color, 1, foamFactor * foamOpacity);
 			o.Smoothness = 1;
-			o.Normal = 2.0 * normalFolding.xzy - 1.0;// UnpackNormal(tex2D(_BumpMap, IN.uv_BumpMap));
+			o.Normal = normal.xzy;
 		}
 
 		ENDCG

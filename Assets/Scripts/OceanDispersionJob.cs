@@ -39,35 +39,30 @@ public struct OceanDispersionJob : IJobParallelFor
         var x = index % resolution;
         var y = index / resolution;
 
-        // These could almost be precomputed.. not sure if fetching would take more than computing them again though
-        // We possibly multiply a bunch of stuff by it anyway.. look into soon
-        var waveVectorX = Mathf.PI * (2 * x - resolution) / patchSize;
-        var waveVectorZ = Mathf.PI * (2.0f * y - resolution) / patchSize;
-
-        var waveLength = Mathf.Sqrt(waveVectorX * waveVectorX + waveVectorZ * waveVectorZ);
+        var waveVector = PI * (2 * float2(x, y) - resolution) / patchSize;
+        var waveLength = length(waveVector);
 
         float omegat = dispersionTable[index] * time;
-
-        float cos = Mathf.Cos(omegat);
-        float sin = Mathf.Sin(omegat);
+        float2 direction = float2(0);
+        sincos(omegat, out direction.y, out direction.x);
 
         var spec = spectrum[index];
-        var c0a = spec.x * cos - spec.y * sin;
-        var c0b = spec.x * sin + spec.y * cos;
-        var c1a = spec.z * cos - spec.w * sin;
-        var c1b = spec.z * -sin + spec.w * -cos;
+        var c0a = spec.x * direction.x - spec.y * direction.y;
+        var c0b = spec.x * direction.y + spec.y * direction.x;
+        var c1a = spec.z * direction.x - spec.w * direction.y;
+        var c1b = spec.z * -direction.y + spec.w * -direction.x;
 
-        var c = new Vector2(c0a + c1a, c0b + c1b);
+        var c = new float2(c0a + c1a, c0b + c1b);
 
         heightBuffer[index] = c;
 
         if (waveLength == 0)
         {
-            displacementBuffer[index] = new Vector4(0, 0, 0, 0);
+            displacementBuffer[index] = 0;
         }
         else
         {
-            displacementBuffer[index] = float4(-c.y * -(waveVectorX / waveLength), c.x * -(waveVectorX / waveLength), -c.y * -(waveVectorZ / waveLength), c.x * -(waveVectorZ / waveLength));
+            displacementBuffer[index] = float4(-c.y * -(waveVector.x / waveLength), c.x * -(waveVector.x / waveLength), -c.y * -(waveVector.y / waveLength), c.x * -(waveVector.y / waveLength));
         }
     }
 }

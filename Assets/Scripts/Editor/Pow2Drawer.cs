@@ -8,7 +8,7 @@ public class Pow2Drawer : PropertyDrawer
     {
         var maxValue = (attribute as Pow2Attribute).MaxValue;
 
-        var valueCount = (int)Mathf.Log(maxValue, 2);
+        var valueCount = (int)Mathf.Log(maxValue, 2) + 1;
         var values = new int[valueCount];
         var valueNames = new GUIContent[valueCount];
 

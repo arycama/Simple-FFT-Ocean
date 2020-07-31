@@ -8,7 +8,7 @@ public struct OceanSpectrumJob : IJobParallelFor
     private float amplitude, directionality, gravity, maxWaveHeight, minWaveLength, patchSize, repeatTime;
     private int resolution;
     private float2 windDirection;
-    private Unity.Mathematics.Random random;
+    private Random random;
 
     [WriteOnly]
     private NativeArray<float> dispersionTable;
@@ -16,7 +16,7 @@ public struct OceanSpectrumJob : IJobParallelFor
     [WriteOnly]
     private NativeArray<float4> spectrum;
 
-    public OceanSpectrumJob(float amplitude, float directionality, float gravity, float maxWaveHeight, float minWaveLength, float patchSize, float repeatTime, int resolution, float2 windDirection, Unity.Mathematics.Random random, NativeArray<float> dispersionTable, NativeArray<float4> spectrum)
+    public OceanSpectrumJob(float amplitude, float directionality, float gravity, float maxWaveHeight, float minWaveLength, float patchSize, float repeatTime, int resolution, float2 windDirection, Random random, NativeArray<float> dispersionTable, NativeArray<float4> spectrum)
     {
         this.amplitude = amplitude;
         this.directionality = directionality;
@@ -52,25 +52,21 @@ public struct OceanSpectrumJob : IJobParallelFor
         var fftNorm = pow(resolution, -0.25f);
         var philNorm = E / patchSize;
 
-        var baseHeight = exp(-1 / pow(waveLength * maxWaveHeight, 2)) / pow(waveLength, 4);
         var waveDirection = waveVector / waveLength;
         var windFactor = float2(dot(waveDirection, windDirection), dot(-waveDirection, windDirection));
-
-        // Remove waves facing away from wind direction
-        var result = amplitude * fftNorm * philNorm * windFactor * float2(sqrt(baseHeight));
-
-        // Remove waves perpendicular to wind
-        // Move waves in wind direction
-        result *= select(1, -sqrt(1 - directionality), windFactor < 0);
+        var phillips = amplitude * exp(-1 / pow(waveLength * maxWaveHeight, 2)) / pow(waveLength, 4) * pow(windFactor, 2);
 
         // Remove small wavelengths
-        result *= exp(-pow(waveLength * minWaveLength, 2));
+        phillips *= exp(-pow(waveLength * minWaveLength, 2));
+
+        // Move waves along wind direction
+        var directionFactor = select(1, -sqrt(1 - directionality), windFactor < 0);
 
         // Gaussian 
         var u = 2 * PI * random.NextFloat2();
         var v = sqrt(-2 * log(random.NextFloat2()));
         var r = float4(v * cos(u), v * sin(u)).xzyw;
 
-        spectrum[index] = 1 / sqrt(2) * r * result.xxyy;
+        spectrum[index] = 1 / sqrt(2) * r * (sqrt(phillips) * directionFactor * fftNorm * philNorm).xxyy;
     }
 }

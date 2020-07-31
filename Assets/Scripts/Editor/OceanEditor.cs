@@ -7,16 +7,31 @@ public class OceanEditor : Editor
     {
         serializedObject.Update();
 
+        var resolutionProperty = serializedObject.FindProperty("resolution");
+        var resolution = resolutionProperty.intValue;
+
         using (var changed = new EditorGUI.ChangeCheckScope())
         {
             base.OnInspectorGUI();
 
-            if(changed.changed && EditorApplication.isPlaying)
+            if(changed.changed)
             {
                 var ocean = target as Ocean;
                 if(ocean.enabled)
                 {
-                    ocean.Recalculate();
+                    serializedObject.ApplyModifiedProperties();
+
+                    if (resolutionProperty.intValue != resolution)
+                    {
+                        // If resolution changed, we need to rebuild all the tables and textures
+                        ocean.Cleanup();
+                        ocean.ReInitialize();
+                    }
+                    else
+                    {
+                        // Otherwise just recalculate some data
+                        ocean.Recalculate();
+                    }
                 }
             }
         }
