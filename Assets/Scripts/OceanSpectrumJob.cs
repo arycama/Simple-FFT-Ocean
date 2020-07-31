@@ -5,7 +5,7 @@ using Unity.Collections;
 
 public struct OceanSpectrumJob : IJobParallelFor
 {
-    private float amplitude, directionality, gravity, maxWaveHeight, minWaveLength, patchSize, repeatTime;
+    private float directionality, gravity, maxWaveHeight, minWaveLength, patchSize;
     private int resolution;
     private float2 windDirection;
     private Random random;
@@ -16,15 +16,13 @@ public struct OceanSpectrumJob : IJobParallelFor
     [WriteOnly]
     private NativeArray<float4> spectrum;
 
-    public OceanSpectrumJob(float amplitude, float directionality, float gravity, float maxWaveHeight, float minWaveLength, float patchSize, float repeatTime, int resolution, float2 windDirection, Random random, NativeArray<float> dispersionTable, NativeArray<float4> spectrum)
+    public OceanSpectrumJob(float directionality, float gravity, float maxWaveHeight, float minWaveLength, float patchSize, int resolution, float2 windDirection, Random random, NativeArray<float> dispersionTable, NativeArray<float4> spectrum)
     {
-        this.amplitude = amplitude;
         this.directionality = directionality;
         this.gravity = gravity;
         this.maxWaveHeight = maxWaveHeight;
         this.minWaveLength = minWaveLength;
         this.patchSize = patchSize;
-        this.repeatTime = repeatTime;
         this.resolution = resolution;
         this.windDirection = windDirection;
         this.random = random;
@@ -39,9 +37,7 @@ public struct OceanSpectrumJob : IJobParallelFor
 
         var waveVector = PI * float2(2 * x - resolution, 2 * y - resolution) / patchSize;
         var waveLength = length(waveVector);
-
-        var dispersion = 2 * PI / repeatTime;
-        dispersionTable[index] = floor(sqrt(gravity * waveLength) / dispersion) * dispersion;
+        dispersionTable[index] = sqrt(gravity * waveLength);
 
         if (waveLength == 0)
         {
@@ -54,7 +50,7 @@ public struct OceanSpectrumJob : IJobParallelFor
 
         var waveDirection = waveVector / waveLength;
         var windFactor = float2(dot(waveDirection, windDirection), dot(-waveDirection, windDirection));
-        var phillips = amplitude * exp(-1 / pow(waveLength * maxWaveHeight, 2)) / pow(waveLength, 4) * pow(windFactor, 2);
+        var phillips = exp(-1 / pow(waveLength * maxWaveHeight, 2)) / pow(waveLength, 4) * pow(windFactor, 2);
 
         // Remove small wavelengths
         phillips *= exp(-pow(waveLength * minWaveLength, 2));

@@ -12,33 +12,26 @@ using UnityEditor;
 [ExecuteAlways]
 public class Ocean : MonoBehaviour
 {
+    private const int batchCount = 64;
+
     [Header("Wind")]
-    [SerializeField, Min(0), Tooltip("Speed of the wind in meters/sec")]
+    [SerializeField, Min(0), Tooltip("Speed of the wind in meters/sec. Affects wave size and speed")]
     private float windSpeed = 32;
 
-    [SerializeField, Range(0, 1)]
+    [SerializeField, Range(0, 1), Tooltip("Angle of the wind")]
     private float windAngle = 0.125f;
 
-    [SerializeField, Range(0, 1)]
+    [SerializeField, Range(0, 1), Tooltip("How aligned the waves are to the wind")]
     private float directionality = 0.875f;
 
-    [SerializeField, Range(0, 2), Tooltip("Height factor for the waves")]
-    private float amplitude = 1;
-
-    [SerializeField]
-    private float repeatTime = 200;
-
-    [SerializeField]
+    [SerializeField, Min(0), Tooltip("Size of the simulation in world space, smaller values give more detail, but look more repetitive")]
     private float patchSize = 64;
 
-    [SerializeField]
+    [SerializeField, Min(0), Tooltip("Gravity in m/s, affects wave size to speed ratio")]
     private float gravity = 9.81f;
 
-    [SerializeField, Pow2(1024)]
+    [SerializeField, Pow2(1024), Tooltip("Resolution of the simulation, higher values produce more detail, but are more performance-intensive")]
     private int resolution = 64;
-
-    [SerializeField, Pow2(4096)]
-    private int batchCount = 64;
 
     private bool isInitialized;
 
@@ -49,6 +42,9 @@ public class Ocean : MonoBehaviour
     private Texture2D heightMap, normalMap, displacementMap;
     private JobHandle jobHandle;
 
+    /// <summary>
+    /// Rebuilds all the tables
+    /// </summary>
     public void ReInitialize()
     {
         dispersionTable = new NativeArray<float>(resolution * resolution, Allocator.Persistent);
@@ -96,12 +92,11 @@ public class Ocean : MonoBehaviour
         var maxWaveHeight = windSpeed * windSpeed / gravity;
         var rand = new Unity.Mathematics.Random(1);
 
-        var spectrumJob = new OceanSpectrumJob(amplitude, directionality, gravity, maxWaveHeight, 0.001f, patchSize, repeatTime, resolution, windDirection, rand, dispersionTable, spectrum);
+        var spectrumJob = new OceanSpectrumJob(directionality, gravity, maxWaveHeight, 0.001f, patchSize, resolution, windDirection, rand, dispersionTable, spectrum);
         jobHandle = spectrumJob.Schedule(resolution * resolution, 64);
         jobHandle.Complete();
 
         Shader.SetGlobalFloat("_OceanScale", patchSize);
-        Shader.SetGlobalVector("_WindVector", (Vector2)windDirection * windSpeed);
     }
 
     private void OnEnable()
@@ -158,26 +153,34 @@ public class Ocean : MonoBehaviour
 
         var passes = (int)Mathf.Log(resolution, 2);
 
-        int j = 0;
+        var j = 0;
         for (var i = 0; i < passes; i++, j++)
         {
-            var heightSrc = j % 2 == 1 ? heightBufferA : heightBufferB;
-            var heightDst = j % 2 == 1 ? heightBufferB : heightBufferA;
-            var dispSrc = j % 2 == 1 ? displacementBufferA : displacementBufferB;
-            var dispDst = j % 2 == 1 ? displacementBufferB : displacementBufferA;
+            OceanFFTRowJob fftJob;
+            if (j % 2 == 0)
+            {
+                fftJob = new OceanFFTRowJob(resolution, i, butterflyLookupTable, heightBufferB, displacementBufferB, heightBufferA, displacementBufferA);
+            }
+            else
+            {
+                fftJob = new OceanFFTRowJob(resolution, i, butterflyLookupTable, heightBufferA, displacementBufferA, heightBufferB, displacementBufferB);
+            }
 
-            var fftJob = new OceanFFTRowJob(resolution, i, butterflyLookupTable, heightSrc, dispSrc, heightDst, dispDst);
             jobHandle = fftJob.Schedule(length, batchCount, jobHandle);
         }
 
         for (var i = 0; i < passes - 1; i++, j++)
         {
-            var heightSrc = j % 2 == 1 ? heightBufferA : heightBufferB;
-            var heightDst = j % 2 == 1 ? heightBufferB : heightBufferA;
-            var dispSrc = j % 2 == 1 ? displacementBufferA : displacementBufferB;
-            var dispDst = j % 2 == 1 ? displacementBufferB : displacementBufferA;
+            OceanFFTColumnJob fftJob;
+            if (j % 2 == 0)
+            {
+                fftJob = new OceanFFTColumnJob(resolution, i, butterflyLookupTable, heightBufferB, displacementBufferB, heightBufferA, displacementBufferA);
+            }
+            else
+            {
+                fftJob = new OceanFFTColumnJob(resolution, i, butterflyLookupTable, heightBufferA, displacementBufferA, heightBufferB, displacementBufferB);
+            }
 
-            var fftJob = new OceanFFTColumnJob(resolution, i, butterflyLookupTable, heightSrc, dispSrc, heightDst, dispDst);
             jobHandle = fftJob.Schedule(length, batchCount, jobHandle);
         }
 
