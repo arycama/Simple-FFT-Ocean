@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Ocean Disp
-  m_Shader: {fileID: 4800000, guid: d069b6cfb0405bd45bbee8d7eb0a1673, type: 3}
+  m_Shader: {fileID: 4800000, guid: 31a34e7a0951b1440b60a8bd4206386b, type: 3}
   m_ShaderKeywords: NORMALIZE_ON
   m_LightmapFlags: 5
   m_EnableInstancingVariants: 1
@@ -20,12 +20,12 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _BumpMap:
-        m_Texture: {fileID: 2800000, guid: 2d8840ac890c4e143b73308fec88efa2, type: 3}
-        m_Scale: {x: 0.018768769, y: 0.018768769}
+        m_Texture: {fileID: 2800000, guid: c7058706a7c18e44caa7bacf3ea78672, type: 3}
+        m_Scale: {x: 0.015625, y: 0.015625}
         m_Offset: {x: 0, y: 0}
     - _FoamMap:
         m_Texture: {fileID: 2800000, guid: 25fd4376f156aa843964ce73e403189a, type: 3}
-        m_Scale: {x: 0.04166667, y: 0.04166667}
+        m_Scale: {x: 0.125, y: 0.125}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
         m_Texture: {fileID: 0}
@@ -36,22 +36,26 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _WaveNoise:
-        m_Texture: {fileID: 2800000, guid: b433c5f00e72e8343991d536d63984a1, type: 3}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 0.125, y: 0.125}
         m_Offset: {x: 0.0879, y: -0.11}
     m_Floats:
     - Normalize: 1
     - _FoamCutoff: 0.76
-    - _FoamStrength: 1.739
-    - _FoamThreshold: 0.811
+    - _FoamStrength: 2
+    - _FoamThreshold: 0.5
     - _FresnelFactor: 8
     - _Offset: 0.5
     - _ReflectionBias: 0
     - _ReflectionFalloff: 5
     - _ReflectionScale: 1
+    - _RefractionOffset: 0.1
+    - _Smoothness: 1
     - _SunPow: 256
+    - _UnderwaterDepth: 512
     m_Colors:
-    - _Color: {r: 0, g: 0.339297, b: 0.556, a: 1}
+    - _Color: {r: 0.05825899, g: 0.25583854, b: 0.39099997, a: 1}
+    - _Extinction: {r: 0.258, g: 0.138, b: 0.13, a: 1}
     - _Scatter: {r: 0, g: 1, b: 0.523159, a: 1}
     - _SeaColor: {r: 0.01615059, g: 0.11558403, b: 0.21641791, a: 1}
     - _SkyColor: {r: 0.620026, g: 0.8512052, b: 0.89705884, a: 1}

@@ -4,6 +4,7 @@ using Unity.Mathematics;
 using static Unity.Mathematics.math;
 using Unity.Jobs;
 using Unity.Collections;
+using System.IO;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -39,7 +40,9 @@ public class Ocean : MonoBehaviour
     private NativeArray<float2> heightBufferA, heightBufferB;
     private NativeArray<float> dispersionTable;
 
-    private Texture2D heightMap, normalMap, displacementMap;
+    private Material normalFoamMaterial;
+    private Texture2D heightMap, displacementMap;//, normalMap;
+    private RenderTexture normalMap;
     private JobHandle jobHandle;
 
     /// <summary>
@@ -52,13 +55,16 @@ public class Ocean : MonoBehaviour
 
         heightMap = new Texture2D(resolution, resolution, TextureFormat.RHalf, false);
         displacementMap = new Texture2D(resolution, resolution, TextureFormat.RGHalf, false);
-        normalMap = new Texture2D(resolution, resolution, TextureFormat.RGBA32, true);
+        //normalMap = new Texture2D(resolution, resolution, TextureFormat.RGBA32, true, true);
+        normalMap = new RenderTexture(resolution, resolution, 0, RenderTextureFormat.ARGB32) { useMipMap = true, wrapMode = TextureWrapMode.Repeat };
 
         ComputeButterflyLookupTable();
 
         Shader.SetGlobalTexture("_OceanHeight", heightMap);
         Shader.SetGlobalTexture("_OceanNormal", normalMap);
         Shader.SetGlobalTexture("_OceanDisplacement", displacementMap);
+
+        normalFoamMaterial = new Material(Shader.Find("Hidden/Ocean Normal Foam"));
 
         Recalculate();
 
@@ -117,6 +123,27 @@ public class Ocean : MonoBehaviour
         UpdateSimulation();
     }
 
+#if UNITY_EDITOR
+    [ContextMenu("Save Normal Map")]
+    private void SaveNormalMap()
+    {
+        var path = EditorUtility.SaveFilePanel("Save File", Application.dataPath, "Ocean Normal", "png");
+
+        jobHandle.Complete();
+
+        var material = new Material(Shader.Find("Hidden/Ocean Normal"));
+        var temp = RenderTexture.GetTemporary(normalMap.width, normalMap.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
+        Graphics.Blit(normalMap, temp, material);
+
+        var tempTexture = temp.ToTexture2D();
+        RenderTexture.ReleaseTemporary(temp);
+        var pngBytes = tempTexture.EncodeToPNG();
+
+        File.WriteAllBytes(path, pngBytes);
+        AssetDatabase.Refresh();
+    }
+#endif
+
     private void UpdateSimulation()
     {
         jobHandle.Complete();
@@ -132,7 +159,10 @@ public class Ocean : MonoBehaviour
         // Apply previous changes and start a new calculation
         heightMap.Apply();
         displacementMap.Apply();
-        normalMap.Apply();
+        //normalMap.Apply();
+
+        // Generate normal
+        Graphics.Blit(null, normalMap, normalFoamMaterial);
 
         var length = resolution * resolution;
         heightBufferA = new NativeArray<float2>(length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
@@ -192,10 +222,10 @@ public class Ocean : MonoBehaviour
         jobHandle = textureJob.Schedule(length, batchCount, jobHandle);
 
         // Generate normal and folding maps
-        var normalPixels = normalMap.GetRawTextureData<int>();
+        //var normalPixels = normalMap.GetRawTextureData<int>();
 
-        var normalFoldJob = new OceanNormalFoldingJob(resolution, patchSize, heightPixels, displacementPixels, normalPixels);
-        jobHandle = normalFoldJob.Schedule(length, batchCount, jobHandle);
+        //var normalFoldJob = new OceanNormalFoldingJob(resolution, patchSize, heightPixels, displacementPixels, normalPixels);
+        //jobHandle = normalFoldJob.Schedule(length, batchCount, jobHandle);
     }
 
     int BitReverse(int i)

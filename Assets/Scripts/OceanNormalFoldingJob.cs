@@ -54,7 +54,7 @@ public struct OceanNormalFoldingJob : IJobParallelFor
 
         var jacobian = (1 + jx.x) * (1 + jz.y) - jx.y * jz.x;
 
-        var normalFolding = int4((float4(normalize(float3(xSlope * delta, 2, zSlope * delta)) * 0.5f + 0.5f, saturate(jacobian))) * 255);
+        var normalFolding = int4((float4(normalize(float3(xSlope * delta, 4, zSlope * delta)) * 0.5f + 0.5f, saturate(jacobian))) * 255);
 
         normalPixels[index] = normalFolding.x | normalFolding.y << 8 | normalFolding.z << 16 | normalFolding.w << 24;
     }

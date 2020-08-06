@@ -1,0 +1,10 @@
+﻿#pragma kernel CSMain
+
+Texture2D<float> Input;
+RWTexture2D<float> Result;
+
+[numthreads(8,8,1)]
+void CSMain (uint2 id : SV_DispatchThreadID)
+{
+	Result[id] = Input[id];
+}

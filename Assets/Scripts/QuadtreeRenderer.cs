@@ -22,6 +22,12 @@ public class QuadtreeRenderer : MonoBehaviour
     [SerializeField, Min(1)]
     private int maxDivisions = 8;
 
+    [SerializeField]
+    private ShadowCastingMode shadowCastingMode = ShadowCastingMode.On;
+
+    [SerializeField]
+    private bool receiveShadows = true;
+
     private List<Vector4>[] matrixMeshArrays;
     private NativeArray<Vector4>[] meshPositions;
     private BatchRendererGroup rendererGroup;
@@ -116,7 +122,7 @@ public class QuadtreeRenderer : MonoBehaviour
         meshPositions = new NativeArray<Vector4>[16];
         for (var i = 0; i < matrixMeshArrays.Length; i++)
         {
-            rendererGroup.AddBatch(mesh, i, material, gameObject.layer, ShadowCastingMode.Off, false, false, default, matrixMeshArrays[i].Count, null, gameObject);
+            rendererGroup.AddBatch(mesh, i, material, gameObject.layer, shadowCastingMode, receiveShadows, false, default, matrixMeshArrays[i].Count, null, gameObject);
             meshPositions[i] = new NativeArray<Vector4>(matrixMeshArrays[i].ToArray(), Allocator.Persistent);
         }
     }
