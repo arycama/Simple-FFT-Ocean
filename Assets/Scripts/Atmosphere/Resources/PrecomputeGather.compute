@@ -1,0 +1,34 @@
+﻿#pragma kernel PrecomputeGather
+
+#include "AtmosphereCommon.hlsl"
+
+RWTexture2D<float4> _CurrentGather, _TotalGather;
+Texture3D<float4> _PreviousScatter;
+float _Samples;
+
+[numthreads(32, 32, 1)]
+void PrecomputeGather(uint2 id : SV_DispatchThreadID)
+{
+	float2 size;
+	_CurrentGather.GetDimensions(size.x, size.y);
+		
+	float2 uv = id / (size - 1.0);
+	float2 coords = float2(_AtmosphereHeight * uv.x, 2.0 * uv.y - 1.0);
+	
+	float3 resolution;
+	_PreviousScatter.GetDimensions(resolution.x, resolution.y, resolution.z);
+	
+	float4 inScatter = 0.0;
+	for (float j = 0.0; j < _Samples; j++)
+	{
+		// Integration goes from -1 to 1
+		float cosView = cos(j / (_Samples - 1.0) * PI);
+		float3 scatterCoords = SkyParamsToScatterCoords(float3(coords.x, cosView, coords.y), resolution);
+		inScatter += _PreviousScatter.SampleLevel(_LinearClampSampler, scatterCoords, 0.0);
+	}
+	
+	inScatter /= _Samples;
+	
+	_CurrentGather[id] = inScatter;
+	_TotalGather[id] += inScatter;
+}

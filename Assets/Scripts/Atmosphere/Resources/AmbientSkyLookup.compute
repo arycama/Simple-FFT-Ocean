@@ -1,0 +1,42 @@
+﻿#pragma kernel AmbientSkyLookup
+
+#include "AtmosphereCommon.hlsl"
+
+float _Samples;
+RWTexture2D<float3> _Result;
+
+[numthreads(32, 32, 1)]
+void AmbientSkyLookup(uint2 id : SV_DispatchThreadID)
+{
+	float2 size;
+	_Result.GetDimensions(size.x, size.y);
+	float2 uv = id / (size - 1);
+
+	float3 resolution;
+	_SkyScatter.GetDimensions(resolution.x, resolution.y, resolution.z);
+	
+	//float viewAngle = 2.0 * uv.y - 1.0;
+	float height = uv.y * _AtmosphereHeight;
+	float lightAngle = 2.0 * uv.x - 1.0;
+	
+	//float3 viewDir = float3(sqrt(saturate(1 - pow(viewAngle, 2.0))), viewAngle, 0);
+	float3 lightDir = float3(sqrt(saturate(1 - pow(lightAngle, 2.0))), lightAngle, 0);
+	
+	// Integrate all the view directions for the light angle
+	float3 ambient = 0.0;
+	for (float i = 0.0; i <_Samples; i++)
+	{
+		// Convert to a -1 to 1 range
+		float cosViewAngle = cos(i / (_Samples - 1) * PI);
+		
+		float3 normal = float3(0, 1, 0);
+		float3 viewDir = float3(sqrt(1 - cosViewAngle * cosViewAngle), cosViewAngle, 0);
+		float ndotl = saturate(dot(normal, viewDir));
+		
+		float3 coords = SkyParamsToScatterCoords(float3(height, cosViewAngle, lightAngle), resolution);
+		float4 scatter = _SkyScatter.SampleLevel(_LinearClampSampler, coords, 0);
+		ambient = ApplyAtmosphericScattering(ambient, scatter, 1, dot(lightDir, viewDir), ndotl);
+	}
+	
+	_Result[id] = PI * ambient / _Samples;
+}

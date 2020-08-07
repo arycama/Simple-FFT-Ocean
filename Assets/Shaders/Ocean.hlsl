@@ -7,13 +7,15 @@
 
 #include "UnityPBSLighting.cginc"
 #include "AutoLight.cginc"
+#include "Assets/Scripts/Atmosphere/Resources/AtmosphereUtils.hlsl"
+
 UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
 UNITY_DECLARE_SHADOWMAP(_ShadowCopy);
 
 sampler2D _BumpMap, _FoamMap, _OceanHeight, _OceanDisplacement, _OceanNormal, _CameraOpaqueTexture, _ReflectionTexture;
 float4 _BumpMap_ST, _FoamMap_ST;
 half3 _Color, _Extinction, _Scatter;
-half _FoamStrength, _FoamThreshold, _OceanScale, _RefractionOffset, _UnderwaterDepth;
+half _DepthFade, _FoamStrength, _FoamThreshold, _OceanScale, _RefractionOffset, _UnderwaterDepth;
 
 struct appdata
 {
@@ -28,6 +30,7 @@ struct v2f
 	float2 uv : TEXCOORD0;
 	float4 screenPos : TEXCOORD1;
 	UNITY_FOG_COORDS(2)
+	AERIAL_PERSPECTIVE_FACTORS(3, 4)
 };
 
 v2f vert(appdata v)
@@ -39,13 +42,18 @@ v2f vert(appdata v)
 	o.uv = o.worldPos.xz / _OceanScale;
 	o.worldPos.y += tex2Dlod(_OceanHeight, float4(o.uv, 0, 0));
 	o.worldPos.xz += tex2Dlod(_OceanDisplacement, float4(o.uv, 0, 0));
+	
+	float dst = distance(o.worldPos.xz, _WorldSpaceCameraPos.xz) / _PlanetRadius;
+	o.worldPos.y += _PlanetRadius * (sqrt(1 - dst * dst) - 1.0);
+	
 	o.pos = UnityWorldToClipPos(o.worldPos);
 	o.screenPos = ComputeScreenPos(o.pos);
 	UNITY_TRANSFER_FOG(o, o.pos);
+	CALCULATE_AERIAL_PERSPECTIVE(o.worldPos, o)
 	return o;
 }
 		
-half3 frag(v2f i, bool isFrontFace : SV_IsFrontFace) : SV_Target
+half4 frag(v2f i, bool isFrontFace : SV_IsFrontFace) : SV_Target
 {
 	half4 normalFoam = tex2D(_OceanNormal, i.uv);
 	
@@ -123,6 +131,9 @@ half3 frag(v2f i, bool isFrontFace : SV_IsFrontFace) : SV_Target
 		underwaterDepth = max(0, linearDepth - pixelDepth);
 	}
 	
+	// Fade edges when close to geometry
+	half fade = saturate(underwaterDepth / _DepthFade);
+	
 	// When underwater, don't worry about the pixel depth for the color
 	float3 underwaterPos = -viewVec / i.screenPos.w * linearDepth + _WorldSpaceCameraPos;
 	if (!isFrontFace)
@@ -162,6 +173,8 @@ half3 frag(v2f i, bool isFrontFace : SV_IsFrontFace) : SV_Target
 	underwaterColor = lerp(underwaterColor, _Scatter * lighting, scatterFactor);
 	color += underwaterColor * (1 - outputAlpha) * (1 - fresnel);
 	
+	APPLY_AERIAL_PERSPECTIVE(color, i.worldPos, i)
 	UNITY_APPLY_FOG(i.fogCoord, color);
-	return color;
+	
+	return half4(color, fade);
 }

@@ -6,39 +6,36 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-namespace FoxieGames
+[CustomEditor(typeof(QuadtreeRenderer))]
+public class OceanMeshEditor : Editor
 {
-	[CustomEditor(typeof(QuadtreeRenderer))]
-	public class OceanMeshEditor : Editor
+	private MaterialEditor materialEditor;
+
+	public override void OnInspectorGUI()
 	{
-		private MaterialEditor materialEditor;
+		base.OnInspectorGUI();
+		EditorGUI.BeginChangeCheck();
 
-		public override void OnInspectorGUI()
+		var materialProperty = serializedObject.FindProperty("material");
+		if (materialProperty.objectReferenceValue != null && materialEditor == null)
 		{
-			base.OnInspectorGUI();
-			EditorGUI.BeginChangeCheck();
+			// Create a new instance of the default MaterialEditor
+			materialEditor = (MaterialEditor)CreateEditor(materialProperty.objectReferenceValue);
+		}
 
-			var materialProperty = serializedObject.FindProperty("material");
-			if (materialProperty.objectReferenceValue != null && materialEditor == null)
+		if (materialEditor != null)
+		{
+			// Draw the material's foldout and the material shader field
+			// Required to call _materialEditor.OnInspectorGUI ();
+			materialEditor.DrawHeader();
+
+			//  We need to prevent the user to edit Unity default materials
+			var isDefaultMaterial = !AssetDatabase.GetAssetPath(materialProperty.objectReferenceValue).StartsWith("Assets");
+			using (new EditorGUI.DisabledGroupScope(isDefaultMaterial))
 			{
-				// Create a new instance of the default MaterialEditor
-				materialEditor = (MaterialEditor)CreateEditor(materialProperty.objectReferenceValue);
-			}
-
-			if (materialEditor != null)
-			{
-				// Draw the material's foldout and the material shader field
-				// Required to call _materialEditor.OnInspectorGUI ();
-				materialEditor.DrawHeader();
-
-				//  We need to prevent the user to edit Unity default materials
-				var isDefaultMaterial = !AssetDatabase.GetAssetPath(materialProperty.objectReferenceValue).StartsWith("Assets");
-				using (new EditorGUI.DisabledGroupScope(isDefaultMaterial))
-				{
-					// Draw the material properties
-					// Works only if the foldout of _materialEditor.DrawHeader () is open
-					materialEditor.OnInspectorGUI();
-				}
+				// Draw the material properties
+				// Works only if the foldout of _materialEditor.DrawHeader () is open
+				materialEditor.OnInspectorGUI();
 			}
 		}
 	}

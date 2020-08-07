@@ -8,6 +8,7 @@ Shader "Ocean/Ocean Surface"
 		_Scatter("Scatter", Color) = (1, 1, 1, 1)
 		_RefractionOffset("Refract Offset", Range(0, 1)) = 0.2
 		_BumpMap("Normal Map", 2D) = "bump" {}
+		_DepthFade("Depth Fade", Range(0, 2)) = 0.2
 
 		[Header(Foam)]
 		_FoamThreshold("Foam Threshold", Range(0, 1)) = 0.3
@@ -23,7 +24,9 @@ Shader "Ocean/Ocean Surface"
 		{
 			Tags { "LightMode" = "ForwardBase" }
 
-			Cull Off
+			Blend SrcAlpha OneMinusSrcAlpha
+			//Cull Off
+			ZWrite Off
 
 			CGPROGRAM
 			#pragma target 3.0
@@ -34,6 +37,7 @@ Shader "Ocean/Ocean Surface"
 			#pragma multi_compile_instancing
 
 			#pragma multi_compile _ _PLANAR_REFLECTIONS_ON
+			#define AERIAL_PERSPECTIVE_ON
 
 			#include "Ocean.hlsl"
 			ENDCG

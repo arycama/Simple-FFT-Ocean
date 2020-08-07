@@ -13,6 +13,8 @@ using UnityEditor;
 [ExecuteAlways]
 public class Ocean : MonoBehaviour
 {
+    public static Ocean Instance { get; private set; }
+
     private const int batchCount = 64;
 
     [Header("Wind")]
@@ -44,6 +46,14 @@ public class Ocean : MonoBehaviour
     private Texture2D heightMap, displacementMap;//, normalMap;
     private RenderTexture normalMap;
     private JobHandle jobHandle;
+
+    public float GetOceanHeight(float3 position)
+    {
+        var oceanUv = frac(position.xz / patchSize);
+        var displacement = displacementMap.GetPixelBilinear(oceanUv.x, oceanUv.y);
+        var heightUv = displacement / patchSize;
+        return transform.position.y + heightMap.GetPixelBilinear(oceanUv.x - heightUv.r, oceanUv.y - heightUv.g).r;
+    }
 
     /// <summary>
     /// Rebuilds all the tables
@@ -107,6 +117,7 @@ public class Ocean : MonoBehaviour
 
     private void OnEnable()
     {
+        Instance = this;
         ReInitialize();
     }
 

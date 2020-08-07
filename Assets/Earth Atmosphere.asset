@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9c9949adcf56a541a341dfc3874a6a5, type: 3}
+  m_Name: Earth Atmosphere
+  m_EditorClassIdentifier: 
+  airScatter: {x: 0.0000058, y: 0.0000135, z: 0.0000331}
+  airAbsorption: {x: 0.00000065, y: 0.000001881, z: 0.000000085}
+  airAverageHeight: 8000
+  aerosolScatter: 0.000002
+  aerosolAbsorption: 0.0000044
+  aerosolAnisotropy: 0.73
+  aerosolAverageHeight: 1200
+  planetRadius: 6360000
+  atmosphereHeight: 60000
+  groundColor: {r: 0.4809999, g: 0.4554149, b: 0.4451807, a: 1}
+  starTexture: {fileID: 0}
+  starSpeed: 0.01
+  starColor: {r: 1, g: 1, b: 1, a: 1}
+  starAxis: {x: 1, y: 0, z: 0}

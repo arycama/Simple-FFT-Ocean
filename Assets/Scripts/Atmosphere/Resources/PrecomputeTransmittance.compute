@@ -1,0 +1,44 @@
+﻿#pragma kernel PrecomputeTransmittance
+
+#include "AtmosphereCommon.hlsl"
+
+RWTexture2D<float3> _Result;
+float _Samples;
+
+[numthreads(32, 32, 1)]
+void PrecomputeTransmittance(uint2 id : SV_DispatchThreadID)
+{
+	float2 resolution;
+	_Result.GetDimensions(resolution.x, resolution.y);
+	
+	float2 uv = id / (resolution - 1.0);
+	
+	float height = _AtmosphereHeight * pow(uv.x, 2.0);
+	float sunAngle = tan((2.0 * uv.y - 1.0 + 0.26) * 0.75) / tan(1.26 * 0.75);
+	sunAngle = clamp(sunAngle, -1.0, 1.0);
+	
+	Ray ray = { float3(0, height.x, 0.0), float3(sqrt(saturate(1 - pow(sunAngle, 2))), sunAngle, 0) };
+	Sphere sphere = { float3(0, -_PlanetRadius, 0), _PlanetRadius + _AtmosphereHeight };
+	
+	// Determine where the ray intersects the outer radius (the top of the atmosphere)
+	SphereHit hit = RaySphereIntersect(ray, sphere);
+	
+	float3 rayStart = ray.origin;
+	float3 rayEnd = hit.hitB.position;
+
+	float3 center = float3(0.0, -_PlanetRadius, 0.0);
+	float3 rayStep = (rayEnd - rayStart) / _Samples;
+	float stepSize = length(rayStep);
+
+	// Iterate through the samples to sum up the optical depth for the distance the ray travels through the atmosphere
+	float3 transmittance = 1.0;
+	for (float i = 0.0; i < _Samples; i++)
+	{
+		float3 position = rayStart + rayStep * i;
+		float height = distance(center, position) - _PlanetRadius;
+		float2 density = exp2(-height * _AtmosphereScaleHeights);
+		transmittance *= exp2(-(_AtmosphereExtinction.xyz * density.x + _AtmosphereExtinction.a * density.y) * stepSize);
+	}
+
+	_Result[id] = transmittance;
+}

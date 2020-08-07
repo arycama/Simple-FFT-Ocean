@@ -1,0 +1,64 @@
+﻿#pragma kernel AerialPerspective
+
+#include "UnityCG.cginc"
+#include "AtmosphereCommon.hlsl"
+
+float4 _BottomLeftCorner;
+float4 _BottomRightCorner;
+float4 _TopLeftCorner;
+float4 _TopRightCorner;
+
+RWTexture3D<float4> _CameraScatter;
+RWTexture3D<float3> _CameraTransmittance;
+Texture2D<float4> _AtmosphereGather;
+
+[numthreads(32, 32, 1)]
+void AerialPerspective(uint2 id : SV_DispatchThreadID)
+{
+	float3 size;
+	_CameraScatter.GetDimensions(size.x, size.y, size.z);
+	
+	// calculate ray end by interpolating between the corners of the far-clip plane
+	float2 coords = id / (size.xy - 1.0);
+	float3 v1 = lerp(_BottomLeftCorner.xyz, _BottomRightCorner.xyz, coords.x);
+	float3 v2 = lerp(_TopLeftCorner.xyz, _TopRightCorner.xyz, coords.x);
+	
+	float3 rayStart = _WorldSpaceCameraPos.xyz;
+	float3 rayEnd = lerp(v1, v2, coords.y);
+	float3 rayDir = rayEnd - rayStart;
+	
+	float rayLength = length(rayDir);
+	rayDir /= rayLength;
+	
+	float3 center = float3(_WorldSpaceCameraPos.xz, -_PlanetRadius).xzy;
+	float3 rayStep = (rayEnd - rayStart) / (size.z - 1.0);
+	float stepLength = length(rayStep);
+	
+	float3 opacity = 1.0;
+	float4 scatter = 0.0;
+	for (float i = 0.0; i < size.z; i++)
+	{
+		float3 position = rayStart + rayStep * i;
+		float height = max(0, distance(center, position) - _PlanetRadius);
+		float2 currentDensity = exp2(-height * _AtmosphereScaleHeights);
+
+		// Fetch multi-scatter
+		float3 normal = normalize(position - center);
+		float lightAngle = dot(_WorldSpaceLightPos0.xyz, normal);
+		float2 coords = float2(height / _AtmosphereHeight, 0.5 * lightAngle + 0.5);
+		float4 multiScatter = _AtmosphereGather.SampleLevel(_LinearClampSampler, coords, 0.0);
+		
+		// New technique?
+		float3 extinction = _AtmosphereExtinction.xyz * currentDensity.x + _AtmosphereExtinction.w * currentDensity.y;
+		float4 scattering = _AtmosphereScatter * currentDensity.xxxy;
+		float3 transmittance = exp2(-extinction * stepLength);
+		float4 luminance = (multiScatter + TransmittanceToAtmosphere(position, _WorldSpaceLightPos0.xyz, center).rgbr) * scattering;
+		
+		float4 integScatt = (luminance - luminance * transmittance.rgbr) / extinction.rgbr;
+		scatter += opacity.rgbr * integScatt;
+		opacity *= transmittance;
+		
+		_CameraScatter[float3(id.xy, i)] = scatter;
+		_CameraTransmittance[float3(id.xy, i)] = opacity;
+	}
+}

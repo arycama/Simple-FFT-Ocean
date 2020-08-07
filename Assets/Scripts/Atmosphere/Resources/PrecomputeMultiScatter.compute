@@ -1,0 +1,65 @@
+﻿#pragma kernel MultiScatter 
+
+#include "AtmosphereCommon.hlsl"
+
+RWTexture3D<float4> _CurrentScatter, _Result;
+Texture2D<float4> _CurrentGather;
+
+float _Samples;
+
+[numthreads(8, 8, 8)]
+void MultiScatter(uint3 id : SV_DispatchThreadID)
+{
+	float3 resolution;
+	_Result.GetDimensions(resolution.x, resolution.y, resolution.z);
+	float3 uv = id / (resolution - 1.0);
+	
+	float3 skyParams = ScatterCoordsToSkyParams(uv, resolution);
+	float3 rayStart = float3(0, skyParams.x, 0);
+	
+	float3 rayDir = float3(sqrt(saturate(1 - pow(skyParams.y, 2.0))), skyParams.y, 0);
+	float3 lightDir = float3(sqrt(saturate(1 - pow(skyParams.z, 2.0))), skyParams.z, 0);
+	float3 center = float3(0, -_PlanetRadius, 0);
+	
+	// Determine where the ray intersects the outer radius (the top of the atmosphere)
+	// This is the end of our ray for determining the optical depth (rayStart is the start)
+	float2 outerDist;
+	RaySphereIntersect(center, _PlanetRadius + _AtmosphereHeight, rayStart, rayDir, outerDist);
+	
+	// Next determine the length of each sample, scale the sample ray, and make sure position checks are at the center of a sample ray
+	float3 rayEnd = rayStart + rayDir * outerDist.y;
+	
+	// Initialize a few variables to use inside the loop
+	float3 rayStep = (rayEnd - rayStart) / (_Samples - 1.0);
+	float stepLength = length(rayStep);
+
+	float3 opacity = 1.0;
+	float4 scatter = 0.0;
+	for (float i = 0.0; i < _Samples; i++)
+	{
+		float3 position = rayStart + rayStep * i;
+		float height = max(0, distance(center, position) - _PlanetRadius);
+		
+		// Fetch multi-scatter
+		float3 normal = normalize(position - center);
+		float lightAngle = dot(lightDir, normal);
+		float2 coords = float2(height / _AtmosphereHeight, 0.5 * lightAngle + 0.5);
+		float4 multiScatter = _CurrentGather.SampleLevel(_LinearClampSampler, coords, 0.0);
+		
+		float2 currentDensity = exp2(-height * _AtmosphereScaleHeights);
+		float3 extinction = _AtmosphereExtinction.xyz * currentDensity.x + _AtmosphereExtinction.w * currentDensity.y;
+		float4 scattering = _AtmosphereScatter * currentDensity.xxxy;
+		float3 transmittance = exp2(-extinction * stepLength);
+		float4 luminance = multiScatter * scattering;
+		
+		float4 integScatt = (luminance - luminance * transmittance.rgbr) / extinction.rgbr;
+		scatter += opacity.rgbr * integScatt;
+		opacity *= transmittance;
+	}
+
+	// Write multi-scattering into a temp texture
+	_CurrentScatter[id] = scatter;
+	
+	// Store the new scatter in a new texture, and add it to the existing one
+	_Result[id] += scatter;
+}

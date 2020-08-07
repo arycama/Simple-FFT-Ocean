@@ -1,0 +1,55 @@
+﻿#pragma kernel PrecomputeInScatter
+
+#include "AtmosphereCommon.hlsl"
+
+RWTexture3D<float4> _Result;
+float _Samples;
+
+[numthreads(8, 8, 8)]
+void PrecomputeInScatter(uint3 id : SV_DispatchThreadID)
+{
+	float3 resolution;
+	_Result.GetDimensions(resolution.x, resolution.y, resolution.z);
+	
+	float3 uv = id / (resolution - 1.0);
+	float3 skyParams = ScatterCoordsToSkyParams(uv, resolution);
+	
+	float3 rayStart = float3(0.0, skyParams.x, 0.0);
+	float3 rayDir = float3(sqrt(1 - saturate(pow(skyParams.y, 2))), skyParams.y, 0);
+	float3 lightDir = float3(sqrt(1 - saturate(pow(skyParams.z, 2))), skyParams.z, 0);
+	
+	float3 center = float3(0, -_PlanetRadius, 0.0);
+	
+	// Determine where the ray intersects the outer radius (the top of the atmosphere)
+	// This is the end of our ray for determining the optical depth (rayStart is the start)
+	float2 outerDist;
+	RaySphereIntersect(center, _PlanetRadius + _AtmosphereHeight, rayStart, rayDir, outerDist);
+	
+	// Next determine the length of each sample, scale the sample ray, and make sure position checks are at the center of a sample ray
+	float3 rayEnd = rayStart + rayDir * outerDist.y;
+
+	// Initialize a few variables to use inside the loop
+	float3 rayStep = (rayEnd - rayStart) / (_Samples - 1.0);
+	float stepLength = length(rayStep);
+	
+	// Start at the center of the first sample rayDir, and loop through each of the others
+	float4 scatter = 0;
+	float3 opacity = 1;
+	for (float i = 0.0; i < _Samples; i++)
+	{
+		float3 position = rayStart + rayStep * i;
+		float height = max(0, distance(center, position) - _PlanetRadius);
+
+		float2 currentDensity = exp2(-height * _AtmosphereScaleHeights);
+		float3 extinction = _AtmosphereExtinction.xyz * currentDensity.x + _AtmosphereExtinction.w * currentDensity.y;
+		float4 scattering = _AtmosphereScatter * currentDensity.xxxy;
+		float3 transmittance = exp2(-extinction * stepLength);
+		float4 luminance = TransmittanceToAtmosphere(position, lightDir, center).rgbr * scattering;
+		
+		float4 integScatt = (luminance - luminance * transmittance.rgbr) / extinction.rgbr;
+		scatter += opacity.rgbr * integScatt;
+		opacity *= transmittance;
+	}
+	
+	_Result[id] = scatter;
+}
