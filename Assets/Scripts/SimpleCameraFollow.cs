@@ -15,13 +15,15 @@ public class SimpleCameraFollow : MonoBehaviour
     private float positionDamping = 1;
 
     [SerializeField, Tooltip("How quickly the camera matches the target's rotation")]
-    private float rotationDamping = 1;
+    private float rotationSpeed = 1;
 
     [SerializeField, Tooltip("Where the Camera moves to, relative to the Target")]
     private Vector3 positionOffset = new Vector3(0, 2, -3);
 
     [SerializeField, Tooltip("Where the Camera attempts to look, relative to the Target")]
     private Vector3 lookOffset = new Vector3(0, 0, 5);
+
+    private Vector3 moveVelocity;
 
     public Transform Target { get { return target; } set { target = value; } }
 
@@ -45,11 +47,11 @@ public class SimpleCameraFollow : MonoBehaviour
     private void FixedUpdate()
     {
         var targetPosition = target.position + target.rotation * positionOffset;
-        var position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * positionDamping);
+        var position = Vector3.SmoothDamp(transform.position, targetPosition, ref moveVelocity, positionDamping);
 
         var lookPosition = target.position + target.rotation * lookOffset;
         var targetRotation = Quaternion.LookRotation(Vector3.Normalize(lookPosition - transform.position));
-        var rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationDamping);
+        var rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
 
         transform.SetPositionAndRotation(position, rotation);
     }

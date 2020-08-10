@@ -17,7 +17,7 @@ MonoBehaviour:
   airAverageHeight: 800
   aerosolScatter: 0.00002
   aerosolAbsorption: 0.000044
-  aerosolAnisotropy: 0.73
+  aerosolAnisotropy: 0.8
   aerosolAverageHeight: 120
   planetRadius: 636000
   atmosphereHeight: 6000

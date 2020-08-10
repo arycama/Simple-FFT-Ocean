@@ -68,7 +68,7 @@ public class BoatEngine : MonoBehaviour
     {
         currentJetPower = Input.GetAxis("Vertical") * force;
 
-        var newSteerAngle = -Input.GetAxis("Horizontal") * maxSteerAngle;
+        var newSteerAngle = Input.GetAxis("Horizontal") * maxSteerAngle;
         currentSteerAngle = Mathf.SmoothDamp(currentSteerAngle, newSteerAngle, ref currentSteerVelocity, steerSmoothTime, maxSteerSpeed);
 
         var newAngle = currentSteerAngle * Mathf.Deg2Rad;
@@ -77,12 +77,11 @@ public class BoatEngine : MonoBehaviour
 
         // Point the engine behind the transform
         engineDirection = newRotation * transform.forward;
+        Debug.DrawLine(transform.TransformPoint(enginePosition), transform.TransformPoint(enginePosition) + engineDirection);
     }
 
     private void FixedUpdate()
     {
-        var forceToAdd = engineDirection;
-
         //Only add the force if the engine is below sea level
         var position = transform.TransformPoint(enginePosition);
         float waveYPos = Ocean.Instance.GetOceanHeight(position);
@@ -99,7 +98,7 @@ public class BoatEngine : MonoBehaviour
 
             var totalPower = torqueCurve.Evaluate(Mathf.InverseLerp(idleRpm, maxRpm, currentRpm)) * currentJetPower;
 
-            rigidbody.AddForceAtPosition(forceToAdd * totalPower, position);
+            rigidbody.AddForceAtPosition(engineDirection * totalPower, position);
         }
         else
         {
@@ -119,6 +118,8 @@ public class BoatEngine : MonoBehaviour
     private void OnDrawGizmos()
     {
         Gizmos.color = Color.yellow;
-        Gizmos.DrawSphere(transform.TransformPoint(enginePosition), 0.1f);
+        Gizmos.matrix = transform.localToWorldMatrix;
+        Gizmos.DrawSphere(enginePosition, 0.1f);
+        Gizmos.DrawLine(enginePosition, enginePosition - Quaternion.AngleAxis(engineAngle, Vector3.right) * Vector3.forward);
     }
 }
