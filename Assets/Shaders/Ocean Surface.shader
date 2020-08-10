@@ -25,8 +25,8 @@ Shader "Ocean/Ocean Surface"
 			Tags { "LightMode" = "ForwardBase" }
 
 			Blend SrcAlpha OneMinusSrcAlpha
-			//Cull Off
-			ZWrite Off
+			Cull Off
+			//ZWrite Off
 
 			CGPROGRAM
 			#pragma target 3.0

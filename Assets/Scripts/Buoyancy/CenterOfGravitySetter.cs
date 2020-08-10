@@ -22,6 +22,14 @@ public class CenterOfGravitySetter : MonoBehaviour
 		}
 	}
 
+	private void OnDisable()
+	{
+		if(rigidbody != null)
+		{
+			rigidbody.ResetCenterOfMass();
+		}
+	}
+
 	private void Update()
 	{
 		if(updateEveryFrame)
